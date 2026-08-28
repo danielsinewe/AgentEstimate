@@ -36,6 +36,18 @@ const robustLogCenter = (samples: readonly CalibrationSample[]): number => {
   return winsorized.reduce((sum, value) => sum + value, 0) / winsorized.length;
 };
 
+const robustDispersionMultiplier = (samples: readonly CalibrationSample[]): number => {
+  if (samples.length < 8) return 1;
+  const values = samples.map((sample) =>
+    Math.log(clamp(sample.actualMinutes / sample.estimatedMinutes, ...RATIO_BOUNDS)),
+  );
+  const center = median(values);
+  const robustScale = Math.max(0.08, 1.4826 * median(values.map((value) => Math.abs(value - center))));
+  const rawMultiplier = clamp(robustScale / 0.34, 0.65, 1.8);
+  const evidenceWeight = samples.length / (samples.length + 12);
+  return 1 + (rawMultiplier - 1) * evidenceWeight;
+};
+
 const shrinkToward = (
   prior: number,
   samples: readonly CalibrationSample[],
@@ -84,6 +96,7 @@ export const calibrate = (
   if (usable.length === 0) {
     return {
       multiplier: 1,
+      dispersionMultiplier: 1,
       sampleCount: 0,
       matchedSampleCount: 0,
       level: 'none',
@@ -95,6 +108,7 @@ export const calibrate = (
   const target = normalizeContext(context);
   let logMultiplier = shrinkToward(0, usable, 12);
   let matchedSampleCount = usable.length;
+  let dispersionSamples: readonly CalibrationSample[] = usable;
   let level: CalibrationLevel = 'global';
 
   const applyLevel = (
@@ -107,6 +121,7 @@ export const calibrate = (
     logMultiplier = shrinkToward(logMultiplier, cohort, priorStrength);
     matchedSampleCount = cohort.length;
     level = nextLevel;
+    if (cohort.length >= 8) dispersionSamples = cohort;
   };
 
   const providerSamples = target.provider
@@ -140,12 +155,14 @@ export const calibrate = (
   applyLevel(exactSamples, 'model-effort', 3, 4);
 
   const multiplier = clamp(Math.exp(logMultiplier), ...CALIBRATION_BOUNDS);
+  const dispersionMultiplier = robustDispersionMultiplier(dispersionSamples);
   return {
     multiplier: Math.round(multiplier * 1000) / 1000,
+    dispersionMultiplier: Math.round(dispersionMultiplier * 1000) / 1000,
     sampleCount: usable.length,
     matchedSampleCount,
     level,
-    applied: Math.abs(multiplier - 1) >= 0.005,
+    applied: Math.abs(multiplier - 1) >= 0.005 || Math.abs(dispersionMultiplier - 1) >= 0.025,
     bounds: CALIBRATION_BOUNDS,
   };
 };

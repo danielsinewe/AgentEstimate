@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agent-eta": {
+      "command": "node",
+      "args": [
+        "-e",
+        "const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'dist','mcp.mjs')).href).then(m=>m.runMcpServer()).catch(e=>{console.error(e);process.exit(1)})"
+      ]
+    }
+  }
+}

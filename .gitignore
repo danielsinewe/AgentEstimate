@@ -1,0 +1,14 @@
+node_modules/
+dist/
+!plugins/agent-eta/dist/
+!plugins/agent-eta/dist/*.mjs
+dist-types/
+*.tsbuildinfo
+.DS_Store
+.vercel/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.agent-eta/

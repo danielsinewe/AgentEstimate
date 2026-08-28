@@ -124,6 +124,24 @@ describe('estimateTask', () => {
     expect(personalized.minutes.p50).toBeGreaterThan(baseline.minutes.p50);
   });
 
+  it('learns interval width from robust residual dispersion', () => {
+    const samples: CalibrationSample[] = Array.from({ length: 16 }, (_, index) => ({
+      estimatedMinutes: 30,
+      actualMinutes: 30 * Math.exp(index % 2 === 0 ? -0.75 : 0.75),
+      taskClass: 'feature',
+      provider: 'codex',
+      model: 'gpt-5.6-codex',
+      effort: 'medium',
+      speed: 'standard',
+    }));
+    const baseline = estimateTask(BASE_INPUT);
+    const personalized = estimateTask({ ...BASE_INPUT, calibrationSamples: samples });
+    expect(personalized.calibration.dispersionMultiplier).toBeGreaterThan(1);
+    expect(personalized.minutes.p80 / personalized.minutes.p50).toBeGreaterThan(
+      baseline.minutes.p80 / baseline.minutes.p50,
+    );
+  });
+
   it('does not echo or derive the seed from private prompt text', () => {
     const secret = 'PRIVATE-TICKET-7291';
     const first = estimateTask({ ...BASE_INPUT, prompt: `Fix ${secret}` });

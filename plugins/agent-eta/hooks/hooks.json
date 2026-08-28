@@ -1,0 +1,49 @@
+{
+  "description": "Estimate at prompt submission and calibrate after each turn without storing prompt or tool content.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'dist','hook.mjs')).href).then(m=>m.runHookProcess()).catch(()=>process.stdout.write('{}\\\\n'))\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'dist','hook.mjs')).href).then(m=>m.runHookProcess()).catch(()=>process.stdout.write('{}\\\\n'))\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'dist','hook.mjs')).href).then(m=>m.runHookProcess()).catch(()=>process.stdout.write('{}\\\\n'))\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'dist','hook.mjs')).href).then(m=>m.runHookProcess()).catch(()=>process.stdout.write('{}\\\\n'))\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

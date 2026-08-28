@@ -1,0 +1,9 @@
+{
+  "name": "agent-eta-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix ../.. run build --workspace=@agent-eta/integration"
+  }
+}

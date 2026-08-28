@@ -1,0 +1,13 @@
+{
+  "name": "agent-eta",
+  "version": "0.1.0",
+  "description": "Local, privacy-first P50 and P80 time forecasts for coding-agent tasks.",
+  "author": {
+    "name": "Daniel Sinewe",
+    "url": "https://github.com/danielsinewe"
+  },
+  "homepage": "https://agentestimate.vercel.app",
+  "repository": "https://github.com/danielsinewe/AgentEstimate",
+  "license": "MIT",
+  "keywords": ["eta", "estimation", "codex", "claude-code"]
+}

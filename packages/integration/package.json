@@ -1,0 +1,46 @@
+{
+  "name": "@agent-eta/integration",
+  "version": "0.1.0",
+  "description": "Privacy-first Codex and Claude Code hooks, CLI, history adapters, and MCP server for Agent ETA.",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist-types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist-types/index.d.ts",
+      "import": "./dist/index.mjs"
+    },
+    "./hook": {
+      "types": "./dist-types/hook.d.ts",
+      "import": "./dist/hook.mjs"
+    },
+    "./mcp": {
+      "types": "./dist-types/mcp.d.ts",
+      "import": "./dist/mcp.mjs"
+    }
+  },
+  "bin": {
+    "agent-eta": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "dist-types"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && tsup && node scripts/sync-plugin.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run test"
+  },
+  "dependencies": {
+    "@agent-eta/core": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "tsup": "8.5.1"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "license": "MIT"
+}

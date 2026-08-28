@@ -146,7 +146,7 @@ const modelProfile = (provider: EstimateInput['provider'], model: string): Model
   if (/haiku|mini|spark|flash|nano|luna/.test(name)) {
     return { pace: 0.74, capability: 0.86, label: 'fast model tier' };
   }
-  if (/opus|ultra|gpt-5\.6-sol/.test(name)) {
+  if (/fable|opus|ultra|gpt-5\.6-sol/.test(name)) {
     return { pace: 1.16, capability: 1.08, label: 'deep model tier' };
   }
   if (/sonnet|terra/.test(name)) {
@@ -334,13 +334,12 @@ const stageCenters = (
   return { centers, drivers, model };
 };
 
-const simulationSigma = (analysis: PromptAnalysis, calibratedSamples: number): number => {
+const simulationSigma = (analysis: PromptAnalysis, dispersionMultiplier: number): number => {
   const base: Record<AmbiguityLevel, number> = { low: 0.22, medium: 0.34, high: 0.5 };
   let sigma = base[analysis.ambiguity];
   if (analysis.signals.external) sigma += 0.06;
   if (analysis.taskClass === 'research' || analysis.taskClass === 'diagnose') sigma += 0.035;
-  if (calibratedSamples >= 12) sigma *= 0.92;
-  return sigma;
+  return sigma * dispersionMultiplier;
 };
 
 const confidenceFor = (
@@ -404,7 +403,7 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
   );
   const resolvedSeed = hashSeed(input.seed);
   const random = createRandom(resolvedSeed);
-  const sigma = simulationSigma(analysis, calibration.sampleCount);
+  const sigma = simulationSigma(analysis, calibration.dispersionMultiplier);
   const valuesByStage: Record<StageName, number[]> = {
     orient: [],
     reason: [],
@@ -445,7 +444,12 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
   const drivers = [...analysis.drivers];
   if (prior > 1.01) drivers.push(`repository prior +${Math.round((prior - 1) * 100)}% at orientation`);
   if (input.speed === 'fast') drivers.push('fast mode on model-bound stages only');
-  if (calibration.applied) drivers.push(`personal calibration ×${calibration.multiplier}`);
+  if (Math.abs(calibration.multiplier - 1) >= 0.005) {
+    drivers.push(`personal center calibration ×${calibration.multiplier}`);
+  }
+  if (Math.abs(calibration.dispersionMultiplier - 1) >= 0.025) {
+    drivers.push(`personal interval width ×${calibration.dispersionMultiplier}`);
+  }
 
   const assumptions: string[] = [];
   if (!input.repo || Object.values(input.repo).every((value) => !safeMetric(value))) {

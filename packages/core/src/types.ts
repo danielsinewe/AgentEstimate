@@ -129,6 +129,8 @@ export type CalibrationLevel =
 
 export interface CalibrationResult {
   multiplier: number;
+  /** Robust residual-width adjustment, shrunk toward the cold-start spread. */
+  dispersionMultiplier: number;
   sampleCount: number;
   matchedSampleCount: number;
   level: CalibrationLevel;
