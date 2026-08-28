@@ -1043,7 +1043,7 @@ async function profileRepository(cwd = process.cwd(), options = {}) {
 import { createHash, createHmac, randomBytes } from "crypto";
 import { appendFile, chmod, mkdir, open as open2, readFile, rename, stat, unlink, writeFile } from "fs/promises";
 import { homedir } from "os";
-import { dirname, join as join2, resolve as resolve2 } from "path";
+import { dirname, join as join2, resolve as resolve2, sep as sep2 } from "path";
 var SCHEMA_VERSION = 1;
 var HISTORY_FILENAME = "runs.jsonl";
 var SALT_FILENAME = ".install-salt";
@@ -1203,6 +1203,13 @@ function resolvePluginDataDir(options = {}) {
   const env = options.env ?? process.env;
   const configured = env.CODEX_PLUGIN_DATA ?? env.PLUGIN_DATA ?? env.CLAUDE_PLUGIN_DATA ?? env.AGENT_ETA_DATA_DIR;
   if (configured) return resolve2(configured);
+  const cwd = resolve2(options.cwd ?? process.cwd());
+  const parts = cwd.split(sep2);
+  const pluginsIndex = parts.lastIndexOf("plugins");
+  if (pluginsIndex > 0 && parts[pluginsIndex + 1] === "cache" && parts[pluginsIndex + 3] === "agent-eta" && parts[pluginsIndex + 2]) {
+    const codexHome = parts.slice(0, pluginsIndex).join(sep2) || sep2;
+    return resolve2(codexHome, "plugins", "data", `agent-eta-${parts[pluginsIndex + 2]}`);
+  }
   const xdgData = env.XDG_DATA_HOME;
   return resolve2(xdgData ? join2(xdgData, "agent-eta") : join2(homedir(), ".agent-eta"));
 }

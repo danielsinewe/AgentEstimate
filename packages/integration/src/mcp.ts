@@ -21,6 +21,7 @@ const READ_ONLY_ANNOTATIONS = {
   idempotentHint: true,
   openWorldHint: false,
 };
+const MAX_WORKSPACE_ROOT_LENGTH = 4_096;
 
 export interface McpServerOptions {
   dataDir?: string;
@@ -38,8 +39,18 @@ function providerValue(value: 'codex' | 'claude' | undefined): AgentProvider {
   return value ?? 'codex';
 }
 
+function isPluginRuntimeRoot(path: string): boolean {
+  return /[/\\]plugins[/\\]cache[/\\][^/\\]+[/\\]agent-eta[/\\][^/\\]+$/u.test(path);
+}
+
+function resolveWorkspaceRoot(explicit: string | undefined, fallback: string | undefined): string | undefined {
+  if (explicit) return resolve(explicit);
+  if (!fallback || isPluginRuntimeRoot(fallback)) return undefined;
+  return fallback;
+}
+
 export function createMcpServer(options: McpServerOptions = {}): McpServer {
-  const workspaceRoot = resolve(options.workspaceRoot ?? process.cwd());
+  const fallbackWorkspaceRoot = resolveWorkspaceRoot(options.workspaceRoot, resolve(process.cwd()));
   const server = new McpServer(
     { name: 'agent-eta', version: VERSION },
     { instructions: 'Estimate task duration locally. No prompt, source code, or tool output is persisted by MCP tools.' },
@@ -56,16 +67,28 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         model: z.string().max(80).optional(),
         effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
         speed: z.enum(['standard', 'fast']).optional(),
+        workspaceRoot: z.string().min(1).max(MAX_WORKSPACE_ROOT_LENGTH).optional()
+          .describe('Absolute path of the active task repository. Omit only when the client has no workspace.'),
       },
       annotations: READ_ONLY_ANNOTATIONS,
     },
-    async ({ prompt, provider: providerInput, model: modelInput, effort: effortInput, speed: speedInput }) => {
+    async ({
+      prompt,
+      provider: providerInput,
+      model: modelInput,
+      effort: effortInput,
+      speed: speedInput,
+      workspaceRoot: workspaceRootInput,
+    }) => {
       const provider = providerValue(providerInput);
       const model = normalizeModel(modelInput, provider);
       const effort = normalizeEffort(effortInput);
       const speed = normalizeSpeed(speedInput);
       const promptFeatures = derivePromptFeatures(prompt);
-      const repo = await profileRepository(workspaceRoot).catch(() => null);
+      const activeWorkspaceRoot = resolveWorkspaceRoot(workspaceRootInput, fallbackWorkspaceRoot);
+      const repo = activeWorkspaceRoot
+        ? await profileRepository(activeWorkspaceRoot).catch(() => null)
+        : null;
       const store = new CalibrationStore({ dataDir: options.dataDir });
       const calibrationSamples = await store.calibrationSamples().catch(() => []);
       const estimate = estimateTask({
@@ -123,13 +146,17 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
     'current_run',
     {
       title: 'Current Agent ETA run',
-      description: 'Read the latest non-stale hook-tracked forecast for one repository. Returns derived metadata only.',
-      inputSchema: {},
+      description: 'Read the latest non-stale hook-tracked forecast. Optionally scope it to the active task repository.',
+      inputSchema: {
+        workspaceRoot: z.string().min(1).max(MAX_WORKSPACE_ROOT_LENGTH).optional()
+          .describe('Absolute path of the active task repository. Omit to read the latest active run.'),
+      },
       annotations: READ_ONLY_ANNOTATIONS,
     },
-    async () => {
+    async ({ workspaceRoot: workspaceRootInput }) => {
       const store = new CalibrationStore({ dataDir: options.dataDir });
-      const current = await store.currentRun({ repoIdentity: workspaceRoot });
+      const activeWorkspaceRoot = resolveWorkspaceRoot(workspaceRootInput, fallbackWorkspaceRoot);
+      const current = await store.currentRun(activeWorkspaceRoot ? { repoIdentity: activeWorkspaceRoot } : {});
       if (!current) return jsonResult({ active: false });
       return jsonResult({
         active: true,

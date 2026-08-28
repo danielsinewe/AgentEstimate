@@ -12,6 +12,10 @@ describe('CalibrationStore', () => {
     expect(resolvePluginDataDir({ dataDir: './explicit-data' })).toBe(join(process.cwd(), 'explicit-data'));
     expect(resolvePluginDataDir({ env: { PLUGIN_DATA: './codex-data' } })).toBe(join(process.cwd(), 'codex-data'));
     expect(resolvePluginDataDir({ env: { CLAUDE_PLUGIN_DATA: './claude-data' } })).toBe(join(process.cwd(), 'claude-data'));
+    expect(resolvePluginDataDir({
+      env: {},
+      cwd: '/Users/test/.codex/plugins/cache/indiecorns/agent-eta/0.1.0+codex.test',
+    })).toBe('/Users/test/.codex/plugins/data/agent-eta-indiecorns');
     expect(resolvePluginDataDir({ env: { XDG_DATA_HOME: './xdg' } })).toBe(join(process.cwd(), 'xdg', 'agent-eta'));
   });
 

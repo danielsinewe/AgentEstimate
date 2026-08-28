@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import type {
   CalibrationStatus,
   CompletedRunRecord,
@@ -40,6 +40,7 @@ const PRIVATE_KEY_PATTERN = /^[a-f0-9]{32}$/u;
 export interface StoreOptions {
   dataDir?: string;
   env?: NodeJS.ProcessEnv;
+  cwd?: string;
 }
 
 export interface StartRunInput {
@@ -236,6 +237,18 @@ export function resolvePluginDataDir(options: StoreOptions = {}): string {
   const env = options.env ?? process.env;
   const configured = env.CODEX_PLUGIN_DATA ?? env.PLUGIN_DATA ?? env.CLAUDE_PLUGIN_DATA ?? env.AGENT_ETA_DATA_DIR;
   if (configured) return resolve(configured);
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const parts = cwd.split(sep);
+  const pluginsIndex = parts.lastIndexOf('plugins');
+  if (
+    pluginsIndex > 0 &&
+    parts[pluginsIndex + 1] === 'cache' &&
+    parts[pluginsIndex + 3] === 'agent-eta' &&
+    parts[pluginsIndex + 2]
+  ) {
+    const codexHome = parts.slice(0, pluginsIndex).join(sep) || sep;
+    return resolve(codexHome, 'plugins', 'data', `agent-eta-${parts[pluginsIndex + 2]}`);
+  }
   const xdgData = env.XDG_DATA_HOME;
   return resolve(xdgData ? join(xdgData, 'agent-eta') : join(homedir(), '.agent-eta'));
 }

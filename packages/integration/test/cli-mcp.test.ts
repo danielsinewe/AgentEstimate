@@ -142,6 +142,7 @@ describe('MCP server', () => {
           model: 'gpt-5.6-codex',
           effort: 'high',
           speed: 'fast',
+          workspaceRoot: root,
         },
       });
       const estimateData = estimate.structuredContent as Record<string, unknown>;
@@ -154,7 +155,7 @@ describe('MCP server', () => {
       expect(JSON.stringify(estimate)).not.toContain(secret);
       await expect(readFile(join(dataDir, 'runs.jsonl'), 'utf8')).rejects.toThrow();
 
-      const noRun = await client.callTool({ name: 'current_run', arguments: {} });
+      const noRun = await client.callTool({ name: 'current_run', arguments: { workspaceRoot: root } });
       expect(noRun.structuredContent).toEqual({ active: false });
 
       await new CalibrationStore({ dataDir }).startRun({
@@ -164,7 +165,7 @@ describe('MCP server', () => {
         features: TEST_FEATURES,
         estimate: TEST_ESTIMATE,
       });
-      const activeRun = await client.callTool({ name: 'current_run', arguments: {} });
+      const activeRun = await client.callTool({ name: 'current_run', arguments: { workspaceRoot: root } });
       expect(activeRun.structuredContent).toMatchObject({
         active: true,
         provider: 'codex',
@@ -173,6 +174,8 @@ describe('MCP server', () => {
         p50: '10 min',
         p80: '15 min',
       });
+      const latestActiveRun = await client.callTool({ name: 'current_run', arguments: {} });
+      expect(latestActiveRun.structuredContent).toMatchObject({ active: true, p50: '10 min', p80: '15 min' });
       const calibration = await client.callTool({ name: 'calibration_status', arguments: {} });
       expect(calibration.structuredContent).toMatchObject({ startedRuns: 1, completedRuns: 0 });
 

@@ -1,6 +1,6 @@
 {
   "name": "agent-eta",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260828184815",
   "description": "Local, privacy-first time forecasts for Codex and Claude Code tasks.",
   "author": {
     "name": "Daniel Sinewe",
@@ -9,7 +9,13 @@
   "homepage": "https://agentestimate.vercel.app",
   "repository": "https://github.com/danielsinewe/AgentEstimate",
   "license": "MIT",
-  "keywords": ["codex", "claude-code", "eta", "estimation", "productivity"],
+  "keywords": [
+    "codex",
+    "claude-code",
+    "eta",
+    "estimation",
+    "productivity"
+  ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
@@ -18,7 +24,11 @@
     "longDescription": "Private, local P50 and P80 time forecasts that learn from completed Codex and Claude Code runs.",
     "developerName": "Daniel Sinewe",
     "category": "Productivity",
-    "capabilities": ["Interactive", "Read", "Write"],
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://agentestimate.vercel.app",
     "defaultPrompt": [
       "Estimate this task before I start.",

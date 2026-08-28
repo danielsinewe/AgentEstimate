@@ -23,7 +23,7 @@ const packageJson = await json('package.json');
 
 for (const manifest of [codex, claude]) {
   assert(manifest.name === 'agent-eta', 'Plugin name must be agent-eta');
-  assert(/^\d+\.\d+\.\d+$/u.test(manifest.version), 'Plugin version must be semver');
+  assert(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(manifest.version), 'Plugin version must be semver');
   assert(typeof manifest.description === 'string' && manifest.description.length > 20, 'Plugin description is missing');
   assert(manifest.license === 'MIT', 'Plugin license must be MIT');
 }
@@ -46,7 +46,8 @@ for (const name of supportedHooks) {
 
 const server = mcp.mcpServers?.['agent-eta'];
 assert(server?.command === 'node', 'MCP server must use Node');
-assert(Array.isArray(server.args) && server.args.join(' ').includes("dist','mcp.mjs"), 'MCP launcher is missing');
+assert(server.cwd === '.', 'MCP server must start in the plugin root');
+assert(Array.isArray(server.args) && server.args.length === 1 && server.args[0] === './dist/mcp.mjs', 'MCP launcher is missing');
 assert(packageJson.name === 'agent-eta-plugin', 'Plugin package name is invalid');
 
 const skill = await readFile(resolve(root, 'skills/estimate/SKILL.md'), 'utf8');

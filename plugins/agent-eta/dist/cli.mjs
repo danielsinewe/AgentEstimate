@@ -8233,7 +8233,7 @@ async function profileRepository(cwd = process.cwd(), options = {}) {
 import { createHash, createHmac, randomBytes } from "crypto";
 import { appendFile, chmod, mkdir, open as open2, readFile, rename, stat, unlink, writeFile } from "fs/promises";
 import { homedir } from "os";
-import { dirname, join as join2, resolve as resolve2 } from "path";
+import { dirname, join as join2, resolve as resolve2, sep as sep2 } from "path";
 var SCHEMA_VERSION = 1;
 var HISTORY_FILENAME = "runs.jsonl";
 var SALT_FILENAME = ".install-salt";
@@ -8393,6 +8393,13 @@ function resolvePluginDataDir(options = {}) {
   const env = options.env ?? process.env;
   const configured = env.CODEX_PLUGIN_DATA ?? env.PLUGIN_DATA ?? env.CLAUDE_PLUGIN_DATA ?? env.AGENT_ETA_DATA_DIR;
   if (configured) return resolve2(configured);
+  const cwd = resolve2(options.cwd ?? process.cwd());
+  const parts = cwd.split(sep2);
+  const pluginsIndex = parts.lastIndexOf("plugins");
+  if (pluginsIndex > 0 && parts[pluginsIndex + 1] === "cache" && parts[pluginsIndex + 3] === "agent-eta" && parts[pluginsIndex + 2]) {
+    const codexHome = parts.slice(0, pluginsIndex).join(sep2) || sep2;
+    return resolve2(codexHome, "plugins", "data", `agent-eta-${parts[pluginsIndex + 2]}`);
+  }
   const xdgData = env.XDG_DATA_HOME;
   return resolve2(xdgData ? join2(xdgData, "agent-eta") : join2(homedir(), ".agent-eta"));
 }
@@ -33306,6 +33313,7 @@ var READ_ONLY_ANNOTATIONS = {
   idempotentHint: true,
   openWorldHint: false
 };
+var MAX_WORKSPACE_ROOT_LENGTH = 4096;
 function jsonResult(value) {
   return {
     content: [{ type: "text", text: JSON.stringify(value) }],
@@ -33315,8 +33323,16 @@ function jsonResult(value) {
 function providerValue(value) {
   return value ?? "codex";
 }
+function isPluginRuntimeRoot(path) {
+  return /[/\\]plugins[/\\]cache[/\\][^/\\]+[/\\]agent-eta[/\\][^/\\]+$/u.test(path);
+}
+function resolveWorkspaceRoot(explicit, fallback) {
+  if (explicit) return resolve4(explicit);
+  if (!fallback || isPluginRuntimeRoot(fallback)) return void 0;
+  return fallback;
+}
 function createMcpServer(options = {}) {
-  const workspaceRoot = resolve4(options.workspaceRoot ?? process.cwd());
+  const fallbackWorkspaceRoot = resolveWorkspaceRoot(options.workspaceRoot, resolve4(process.cwd()));
   const server = new McpServer(
     { name: "agent-eta", version: VERSION },
     { instructions: "Estimate task duration locally. No prompt, source code, or tool output is persisted by MCP tools." }
@@ -33331,17 +33347,26 @@ function createMcpServer(options = {}) {
         provider: external_exports.enum(["codex", "claude"]).optional(),
         model: external_exports.string().max(80).optional(),
         effort: external_exports.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
-        speed: external_exports.enum(["standard", "fast"]).optional()
+        speed: external_exports.enum(["standard", "fast"]).optional(),
+        workspaceRoot: external_exports.string().min(1).max(MAX_WORKSPACE_ROOT_LENGTH).optional().describe("Absolute path of the active task repository. Omit only when the client has no workspace.")
       },
       annotations: READ_ONLY_ANNOTATIONS
     },
-    async ({ prompt, provider: providerInput, model: modelInput, effort: effortInput, speed: speedInput }) => {
+    async ({
+      prompt,
+      provider: providerInput,
+      model: modelInput,
+      effort: effortInput,
+      speed: speedInput,
+      workspaceRoot: workspaceRootInput
+    }) => {
       const provider = providerValue(providerInput);
       const model = normalizeModel(modelInput, provider);
       const effort = normalizeEffort(effortInput);
       const speed = normalizeSpeed(speedInput);
       const promptFeatures = derivePromptFeatures(prompt);
-      const repo = await profileRepository(workspaceRoot).catch(() => null);
+      const activeWorkspaceRoot = resolveWorkspaceRoot(workspaceRootInput, fallbackWorkspaceRoot);
+      const repo = activeWorkspaceRoot ? await profileRepository(activeWorkspaceRoot).catch(() => null) : null;
       const store = new CalibrationStore({ dataDir: options.dataDir });
       const calibrationSamples = await store.calibrationSamples().catch(() => []);
       const estimate = estimateTask({
@@ -33393,13 +33418,16 @@ function createMcpServer(options = {}) {
     "current_run",
     {
       title: "Current Agent ETA run",
-      description: "Read the latest non-stale hook-tracked forecast for one repository. Returns derived metadata only.",
-      inputSchema: {},
+      description: "Read the latest non-stale hook-tracked forecast. Optionally scope it to the active task repository.",
+      inputSchema: {
+        workspaceRoot: external_exports.string().min(1).max(MAX_WORKSPACE_ROOT_LENGTH).optional().describe("Absolute path of the active task repository. Omit to read the latest active run.")
+      },
       annotations: READ_ONLY_ANNOTATIONS
     },
-    async () => {
+    async ({ workspaceRoot: workspaceRootInput }) => {
       const store = new CalibrationStore({ dataDir: options.dataDir });
-      const current = await store.currentRun({ repoIdentity: workspaceRoot });
+      const activeWorkspaceRoot = resolveWorkspaceRoot(workspaceRootInput, fallbackWorkspaceRoot);
+      const current = await store.currentRun(activeWorkspaceRoot ? { repoIdentity: activeWorkspaceRoot } : {});
       if (!current) return jsonResult({ active: false });
       return jsonResult({
         active: true,
