@@ -249,7 +249,6 @@ function App() {
   useEffect(() => {
     const available = MODELS[provider];
     setModel(available[0]!.id);
-    setEffort(provider === 'claude' ? 'xhigh' : 'high');
     setSpeed('standard');
   }, [provider]);
 
