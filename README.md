@@ -108,7 +108,7 @@ The build copies the runtime into the self-contained plugin bundle. Load it for 
 claude --plugin-dir "$PWD/plugins/agent-eta"
 ```
 
-Then ask, for example, “Estimate this task before I start.” The bundled skill, MCP server, and lifecycle hooks work together: the prompt-submit hook shows the initial P50/P80 range, and completion hooks record the elapsed outcome for local calibration.
+Then ask, for example, “Estimate this task before I start.” The bundled skill, MCP server, and lifecycle hooks work together: the prompt-submit hook computes the initial P50/P80 range and gives the agent a privacy-safe developer instruction to show that exact line before any other reply or tool call. The UI warning remains as a fallback, and completion hooks record the elapsed outcome for local calibration.
 
 The bundle also contains a Codex plugin manifest for personal or team marketplaces. This repository intentionally remains an application repository rather than a marketplace registry; the manual MCP setup above is the checkout-agnostic Codex path.
 
@@ -155,7 +155,7 @@ Raw prompts are processed in memory and are not copied into Agent ETA history. S
 - forecast quantiles, timestamps, elapsed duration, and outcome;
 - install-salted identifiers for runs, sessions, and repositories.
 
-The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. The CLI/plugin store defaults to `~/.agent-eta/runs.jsonl`, or `$XDG_DATA_HOME/agent-eta/runs.jsonl` when configured. Codex/Claude plugin data directories and `AGENT_ETA_DATA_DIR` override that location. On supported systems the directory is created with mode `0700` and the files with mode `0600`.
+The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. The CLI/plugin store defaults to `~/.agent-eta/runs.jsonl`, or `$XDG_DATA_HOME/agent-eta/runs.jsonl` when configured. Codex/Claude plugin data directories override that location; an explicit `AGENT_ETA_DATA_DIR` takes highest priority. On supported systems the directory is created with mode `0700` and the files with mode `0600`.
 
 Hook payloads do not consistently expose the active model, effort, or speed setting. Agent ETA uses any values the host supplies and labels every fallback assumption in the forecast message. For exact passive forecasts, set `AGENT_ETA_MODEL`, `AGENT_ETA_EFFORT`, and `AGENT_ETA_SPEED` (`standard` or `fast`) in the environment that launches Codex or Claude Code; `AGENT_ETA_PROVIDER` can be set to `codex` or `claude` when host detection is unavailable.
 

@@ -171,7 +171,19 @@ async function handleSubmit(input: HookInput, options: HookInvocationOptions): P
   const assumptionNote = assumed.length
     ? ` · assumes ${assumed.join(' + ')} (AGENT_ETA_* can override)`
     : '';
-  return { systemMessage: `Agent ETA · P50 ${estimate.formatted.p50} · P80 ${estimate.formatted.p80}${assumptionNote}` };
+  const forecastMessage = `Agent ETA · P50 ${estimate.formatted.p50} · P80 ${estimate.formatted.p80}${assumptionNote}`;
+  return {
+    systemMessage: forecastMessage,
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: [
+        '<agent-eta-forecast>',
+        forecastMessage,
+        'Before any other commentary, answer, or tool call, show the forecast line above verbatim as the first user-visible response for this turn. Then continue with the request. Do not omit, paraphrase, or recalculate it.',
+        '</agent-eta-forecast>',
+      ].join('\n'),
+    },
+  };
 }
 
 async function handleCompletion(

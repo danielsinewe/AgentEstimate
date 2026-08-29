@@ -66,6 +66,17 @@ const submitOutput = JSON.parse(submitted.stdout);
 if (typeof submitOutput.systemMessage !== 'string' || !submitOutput.systemMessage.includes('P80')) {
   throw new Error('Prompt-submit hook did not return an ETA');
 }
+if (
+  submitOutput.hookSpecificOutput?.hookEventName !== 'UserPromptSubmit'
+  || !submitOutput.hookSpecificOutput.additionalContext?.includes(
+    `${submitOutput.systemMessage}\nBefore any other commentary, answer, or tool call`,
+  )
+) {
+  throw new Error('Prompt-submit hook did not tell the agent to show the ETA first');
+}
+if (submitOutput.hookSpecificOutput.additionalContext.includes(privatePromptMarker)) {
+  throw new Error('Prompt-submit hook exposed private input in model-visible context');
+}
 
 const completed = await runCommand(commandFor('Stop'), {
   hook_event_name: 'Stop',
@@ -110,6 +121,7 @@ process.stdout.write(`${JSON.stringify({
   submitHookMs: submitted.elapsedMs,
   completionHookMs: completed.elapsedMs,
   systemMessage: submitOutput.systemMessage,
+  firstResponseInstruction: true,
   persistedRecords: records.length,
   rawInputPersisted: false,
   mcpTools,

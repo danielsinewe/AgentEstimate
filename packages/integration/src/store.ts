@@ -235,7 +235,7 @@ function isCachedProfile(value: unknown): value is { savedAt: string; profile: O
 export function resolvePluginDataDir(options: StoreOptions = {}): string {
   if (options.dataDir) return resolve(options.dataDir);
   const env = options.env ?? process.env;
-  const configured = env.CODEX_PLUGIN_DATA ?? env.PLUGIN_DATA ?? env.CLAUDE_PLUGIN_DATA ?? env.AGENT_ETA_DATA_DIR;
+  const configured = env.AGENT_ETA_DATA_DIR ?? env.CODEX_PLUGIN_DATA ?? env.PLUGIN_DATA ?? env.CLAUDE_PLUGIN_DATA;
   if (configured) return resolve(configured);
   const cwd = resolve(options.cwd ?? process.cwd());
   const parts = cwd.split(sep);

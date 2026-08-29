@@ -126,4 +126,11 @@ export interface HookInput {
   [key: string]: unknown;
 }
 
-export type HookOutput = Record<string, unknown>;
+export interface HookOutput {
+  systemMessage?: string;
+  hookSpecificOutput?: {
+    hookEventName: 'UserPromptSubmit';
+    additionalContext: string;
+  };
+  [key: string]: unknown;
+}

@@ -10,6 +10,9 @@ import { TEST_ESTIMATE, TEST_FEATURES } from './helpers.js';
 describe('CalibrationStore', () => {
   it('resolves explicit and environment-specific data directories in priority order', () => {
     expect(resolvePluginDataDir({ dataDir: './explicit-data' })).toBe(join(process.cwd(), 'explicit-data'));
+    expect(resolvePluginDataDir({
+      env: { AGENT_ETA_DATA_DIR: './agent-eta-data', CODEX_PLUGIN_DATA: './codex-data' },
+    })).toBe(join(process.cwd(), 'agent-eta-data'));
     expect(resolvePluginDataDir({ env: { PLUGIN_DATA: './codex-data' } })).toBe(join(process.cwd(), 'codex-data'));
     expect(resolvePluginDataDir({ env: { CLAUDE_PLUGIN_DATA: './claude-data' } })).toBe(join(process.cwd(), 'claude-data'));
     expect(resolvePluginDataDir({
@@ -290,6 +293,17 @@ describe('hook lifecycle and fail-open privacy', () => {
       { provider: 'codex', dataDir, now: () => new Date('2026-08-28T10:00:00.000Z') },
     );
     expect(submit.systemMessage).toMatch(/^Agent ETA · P50 .+ · P80 .+$/u);
+    expect(submit.hookSpecificOutput).toEqual({
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: expect.stringContaining(
+        `${submit.systemMessage}\nBefore any other commentary, answer, or tool call`,
+      ),
+    });
+    expect(submit.hookSpecificOutput?.additionalContext.startsWith('<agent-eta-forecast>\nAgent ETA · P50')).toBe(true);
+    expect(submit.hookSpecificOutput?.additionalContext.endsWith('</agent-eta-forecast>')).toBe(true);
+    expect(submit.hookSpecificOutput?.additionalContext).not.toContain(secret);
+    expect(submit.hookSpecificOutput?.additionalContext).not.toContain(cwd);
+    expect(submit.hookSpecificOutput?.additionalContext).not.toContain('deploy to production');
 
     const rawHistory = await readFile(join(dataDir, 'runs.jsonl'), 'utf8');
     expect(rawHistory).not.toContain(secret);

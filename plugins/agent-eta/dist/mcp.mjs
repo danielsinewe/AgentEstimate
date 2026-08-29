@@ -32601,7 +32601,7 @@ function isCachedProfile(value) {
 function resolvePluginDataDir(options = {}) {
   if (options.dataDir) return resolve2(options.dataDir);
   const env = options.env ?? process.env;
-  const configured = env.CODEX_PLUGIN_DATA ?? env.PLUGIN_DATA ?? env.CLAUDE_PLUGIN_DATA ?? env.AGENT_ETA_DATA_DIR;
+  const configured = env.AGENT_ETA_DATA_DIR ?? env.CODEX_PLUGIN_DATA ?? env.PLUGIN_DATA ?? env.CLAUDE_PLUGIN_DATA;
   if (configured) return resolve2(configured);
   const cwd = resolve2(options.cwd ?? process.cwd());
   const parts = cwd.split(sep2);
