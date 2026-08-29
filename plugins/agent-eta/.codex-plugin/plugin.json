@@ -1,6 +1,6 @@
 {
   "name": "agent-eta",
-  "version": "0.1.0+codex.20260829054106",
+  "version": "0.1.0+codex.20260829055345",
   "description": "Local, privacy-first time forecasts for Codex and Claude Code tasks.",
   "author": {
     "name": "Daniel Sinewe",

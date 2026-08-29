@@ -36,7 +36,7 @@ for (const asset of [codex.interface?.composerIcon, codex.interface?.logo, codex
   await exists(asset);
 }
 
-const supportedHooks = ['UserPromptSubmit', 'Stop', 'StopFailure', 'SessionEnd'];
+const supportedHooks = ['UserPromptSubmit', 'Stop', 'SessionEnd'];
 assert(Object.keys(hooks.hooks ?? {}).every((name) => supportedHooks.includes(name)), 'Unsupported hook event');
 for (const name of supportedHooks) {
   const command = hooks.hooks?.[name]?.[0]?.hooks?.[0]?.command;
