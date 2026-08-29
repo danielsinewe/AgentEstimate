@@ -119,7 +119,7 @@ describe('estimateTask', () => {
     const baseline = estimateTask(BASE_INPUT);
     const personalized = estimateTask({ ...BASE_INPUT, calibrationSamples: samples });
     expect(calibration.multiplier).toBeGreaterThan(1);
-    expect(calibration.multiplier).toBeLessThanOrEqual(1.75);
+    expect(calibration.multiplier).toBeLessThanOrEqual(1.8);
     expect(calibration.level).toBe('model-effort');
     expect(personalized.minutes.p50).toBeGreaterThan(baseline.minutes.p50);
   });

@@ -15,8 +15,8 @@
 - **P50** — the modeled typical duration. Check observed coverage before treating it as a literal 50th percentile.
 - **P80** — the safer modeled planning bound. Check observed coverage before treating it as a literal 80th percentile.
 - **A stage forecast** — Orient → Reason → Change → Verify → Deliver.
-- **Explainable drivers** — scope, ambiguity, model, effort, tests, browser work, external services, deployment, and a deliberately weak repository-size prior.
-- **Personal calibration** — successful local runs gradually correct the baseline for your provider, task class, model, effort, and speed mode.
+- **Explainable drivers** — ranked by marginal minutes, including scope, ambiguity, verification loops, deployment, and a deliberately weak repository-size prior.
+- **Personal calibration** — similar local runs correct the center and upper quantiles without double-counting overlapping cohorts or learning from implausible stop boundaries.
 
 ## Choose a surface
 
@@ -135,12 +135,13 @@ The core is deterministic for the same input, seed, and calibration samples. It 
 
 Agent ETA is an explainable reference-class model, not an opaque claim of machine-learning precision.
 
-1. It classifies the task and infers scope, ambiguity, and operational loops from the prompt.
+1. It classifies the task and separates bounded micro-edits from vague product-level work.
 2. It estimates five stages separately: Orient, Reason, Change, Verify, and Deliver.
 3. It applies provider/model, effort, and speed interactions. Fast mode only compresses model-bound work; tests and deployments do not magically run faster.
 4. It adds a capped logarithmic repository prior. Repository size can lengthen orientation, but it cannot dominate the task itself.
-5. It runs 1,600 deterministic correlated simulations and reports P25, P50, P80, P95, and the mean.
-6. When local outcomes exist, a robust, shrinkage-based multiplier adapts the result while resisting outliers and small-sample overfitting.
+5. It prices interactions between sequential test, browser, service, and deployment loops.
+6. It runs 1,600 deterministic correlated simulations with an explicit rework-tail state and reports P25, P50, P80, P95, and the mean.
+7. Similar local outcomes contribute once through a robust similarity weight; enough history can correct P80/P95 coverage separately from the median.
 
 The full rationale, source review, equations, and known limitations are in [docs/research.md](docs/research.md).
 

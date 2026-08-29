@@ -1,12 +1,14 @@
 # Agent ETA: research and forecasting method
 
-**Research snapshot:** 28 August 2026
+**Research snapshot:** 29 August 2026
 **Product:** [Agent ETA](https://agentestimate.vercel.app)
 **Forecast target:** wall-clock time from task submission until the coding agent returns control
 
 ## Executive conclusion
 
 A coding-agent ETA should be a planning distribution, not a single countdown. The strongest pre-run signals are the requested outcome, task class, scope, ambiguity, verification loops, external systems, deployment, model, effort, and speed mode. Repository size contributes information, but only as a weak prior: agents inspect a selective slice of most repositories, and a one-line production bug can take longer than a broad mechanical edit.
+
+The cold-start model now also separates bounded micro-tasks from vague product-level requests, prices interactions between sequential feedback loops, and includes an explicit low-probability rework state. This keeps simple commands small without creating falsely narrow P80/P95 ranges for ambiguous integration work.
 
 The strongest long-run signal is personal history measured at stable lifecycle boundaries. Agent ETA therefore combines four surfaces:
 
@@ -46,6 +48,9 @@ The research intentionally prioritizes first-party product documentation. Third-
 | Claude Code [model configuration](https://code.claude.com/docs/en/model-config) distinguishes model selection and effort. | Model and effort are separate ETA inputs. | Model affects pace/capability; effort changes stage time, especially reasoning. |
 | Claude Code [fast mode](https://code.claude.com/docs/en/fast-mode) describes up to roughly 2.5× output-token speed while noting that time to first token is not improved. | “Fast” cannot be applied uniformly to total task duration. | Treat speed as a bounded interaction on model-bound stages, not a 2.5× end-to-end promise. |
 | METR's [time-horizon methodology](https://metr.org/time-horizons/) measures the human-equivalent difficulty of tasks agents can complete at a given reliability. | Capability time horizons are not the same variable as agent wall-clock execution time. | Do not use METR horizon values as ETA labels. They may inform task difficulty research, not minutes-until-return. |
+| OpenAI's 2026 [agent-work study](https://openai.com/index/how-agents-are-transforming-work/) shows that users increasingly delegate longer, multi-step work and explicitly labels its human-time thresholds as directional estimates. | Real usage spans short interactions and long-horizon delegated work, but human-equivalent task time is still not agent runtime. | Preserve a broad task range while keeping the forecast target strictly return-to-control time. |
+| Gneiting, Balabdaoui, and Raftery's [probabilistic forecast framework](https://doi.org/10.1111/j.1467-9868.2007.00587.x) defines the goal as sharp predictive distributions subject to calibration. | A range should not be widened indiscriminately just to catch every outcome. | Track coverage and interval width together; prefer evidence-weighted correction over blanket padding. |
+| Jørgensen's [probabilistic software-effort evaluation](https://doi.org/10.1016/j.infsof.2019.08.006) applies the same calibration-and-informativeness principle to software work. | P50/P80 labels are only useful when their observed coverage is auditable. | Store original quantiles, report coverage, and learn quantile-specific corrections when enough local evidence exists. |
 
 ### Evidence that was deliberately not treated as ground truth
 
@@ -82,6 +87,8 @@ The analyzer derives categories, never prompt excerpts:
 - expected loops: external service, tests, browser work, deployment, and destructive-operation safeguards;
 - counts: characters, words, lines, checklist items, and action-oriented structure.
 
+Terse reply-only commands and explicit one-line edits receive bounded micro-task treatment. Conversely, phrases such as “make the app better” and “impress me” increase both inferred scope and ambiguity instead of masquerading as tiny feature work.
+
 Callers can override inferred facts. Explicit task metadata is more reliable than keyword inference.
 
 ### 2. Five-stage decomposition
@@ -108,6 +115,7 @@ For each stage center, the engine combines:
 - reasoning effort;
 - explicit expected file count when supplied;
 - additive time for tests, browser work, external systems, deployment, and destructive safeguards;
+- pairwise interaction time when several of those loops must happen sequentially;
 - personal calibration multiplier.
 
 Fast mode is applied only to Orient, Reason, and Change. Higher effort and already-fast model tiers receive a smaller speed reduction. Verify and Deliver stay anchored to real tool and service time.
@@ -120,17 +128,23 @@ The local profiler derives aggregate shape from Git-tracked and unignored files 
 
 The repository multiplier uses capped logarithms of file count, estimated lines, tests, languages, dependencies, and package count. Its total increment is capped, and stage weights make it strongest during orientation. This expresses a modest “more surface to search” prior without equating a large repository with a hard task.
 
-### 5. Correlated uncertainty simulation
+### 5. Correlated uncertainty and rework simulation
 
 For each stage `s`, a center `μs` is calculated from the factors above. The engine then produces 1,600 samples:
 
 ```text
 T(i) = Σs T(i,s)
 
-T(i,s) = μs × exp(σs × (0.48 × Zshared + 0.877 × Zstage))
+T(i,s) = μs × exp(σs × (0.48 × Zshared + 0.877 × Zstage)) × (1 + Ws × Ri)
+
+Ri = Bi × (0.22 + 0.34 × |Zrework|)
+
+Bi ~ Bernoulli(π)
 ```
 
 `Zshared` makes a generally easy or difficult run move all stages together. `Zstage` preserves stage-specific surprises. `σ` increases with ambiguity, external dependencies, research/diagnosis, and limited calibration. The log-normal form keeps time positive and produces the long tail common in software work.
+
+`Bi` represents a low-probability rework or blocker state. Its probability `π` rises with ambiguity, external services, deployment, destructive work, diagnosis, and migration. The stage weight `Ws` is strongest in verification and change. This mixture makes the P80/P95 react to unknown-unknowns without inflating the median of every clear local task.
 
 The engine sorts the simulated totals to return P25, P50, P80, P95, and the arithmetic mean. A stable default seed is independent of prompt text. The same normalized input and calibration history therefore produce the same result, which makes changes testable and what-if comparisons meaningful.
 
@@ -142,15 +156,11 @@ For successful runs, calibration starts from the ratio:
 actual elapsed minutes / original P50 minutes
 ```
 
-It estimates a robust center in log space, limits extreme ratios, winsorizes deviations around the median, and progressively shrinks specific cohorts toward broader evidence:
+It estimates a robust center in log space, limits extreme ratios, and winsorizes deviations around a weighted median. Each historical run receives one similarity weight from task class, provider, model, effort, and speed. It is counted exactly once; overlapping cohort labels cannot amplify the same two samples. The weighted result is shrunk toward the cold-start prior according to effective sample size.
 
-```text
-global → provider → task class → provider + task → model + effort + speed
-```
+Stop boundaries with an actual/P50 ratio below `0.08` or above `8` remain visible in history but are quarantined from learning. This protects the model from reply-only tests, interrupted sessions incorrectly reported as clean stops, and runaway timers. The final center multiplier is clamped to `0.55…1.80`. With enough comparable samples, robust residual dispersion adjusts interval width. When original P80/P95 values are available, empirical upper-quantile residuals add separately shrunk coverage corrections rather than assuming a center correction fixes the tail.
 
-More specific levels require minimum sample counts. The final center multiplier is clamped to `0.60…1.75`, preventing a short history or stopped timer from making future ranges implausibly tiny or huge. With at least eight comparable samples, a robust median-absolute-deviation estimate also widens or narrows the interval, heavily shrunk toward the cold-start spread. Failed and censored runs remain visible in status, but only successful runs personalize duration.
-
-Personalization adapts both the center and residual width; empirical P50/P80 coverage remains the test of whether the distribution is trustworthy. The status label becomes `personalized`, never `calibrated`, because sample count alone cannot certify coverage.
+Personalization adapts the center, residual width, and—when evidence supports it—upper quantiles. Empirical P50/P80 coverage remains the test of whether the distribution is trustworthy. The status label becomes `personalized`, never `calibrated`, because sample count alone cannot certify coverage.
 
 ## Privacy and threat boundary
 
@@ -209,6 +219,7 @@ Cross-provider comparisons are therefore directional unless both hosts use equiv
 8. **Completion is not correctness.** A stop event does not prove tests passed, a deployment is healthy, or the requested product outcome works.
 9. **No live survival update yet.** `current_run` reports elapsed time against the initial range; it does not infer remaining time from tool progress.
 10. **Human time is not modeled separately.** Approval and clarification waits may enter elapsed wall time even though they are not model compute.
+11. **Cold-start scenario bounds are engineered, not learned population statistics.** Regression contracts prevent obvious category failures, while real chronological histories must determine eventual coverage.
 
 ## Validation plan
 
@@ -226,6 +237,8 @@ Track at least:
 - hook overhead and missing-boundary rate.
 
 Evaluation should freeze a model version, predict each new run before adding its outcome, and compare against simple baselines such as a global median and a task-class median. A more complex model earns its place only if it improves held-out calibration or sharpness without weakening privacy and explainability.
+
+The repository also maintains deterministic scenario contracts for reply-only commands, one-line edits, vague product work, multi-loop integrations, and migrations. These are guardrails against category errors, not substitutes for held-out coverage evaluation.
 
 Useful future upgrades include:
 

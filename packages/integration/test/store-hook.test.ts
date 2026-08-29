@@ -87,6 +87,8 @@ describe('CalibrationStore', () => {
       startedRuns: 3,
       completedRuns: 3,
       successfulRuns: 2,
+      eligibleCalibrationRuns: 2,
+      excludedCalibrationRuns: 0,
       failedRuns: 1,
       censoredRuns: 0,
       medianActualMinutes: 9,

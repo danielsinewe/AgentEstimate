@@ -7191,7 +7191,7 @@ var require_dist = __commonJS({
 import { pathToFileURL as pathToFileURL3 } from "url";
 
 // ../core/dist/prompt.js
-var ACTION_PATTERN = /\b(add|audit|build|change|check|clean|convert|create|debug|delete|deploy|design|diagnose|document|estimate|explain|fix|implement|integrate|investigate|migrate|optimize|publish|refactor|release|remove|repair|research|review|ship|test|update|verify|write)\b/gi;
+var ACTION_PATTERN = /\b(add|audit|build|change|check|clean|convert|create|debug|delete|deploy|design|diagnose|document|enhance|estimate|explain|fix|implement|improve|integrate|investigate|migrate|optimize|publish|refactor|release|remove|rename|repair|research|review|ship|test|update|verify|write)\b/gi;
 var FILE_PATTERN = /(?:^|\s)(?:[\w@.-]+\/)+[\w@.-]+|\b[\w-]+\.(?:c|cc|cpp|css|go|html|java|js|json|jsx|kt|md|php|py|rb|rs|sql|swift|toml|ts|tsx|vue|yaml|yml)\b/gi;
 var CLASS_RULES = [
   {
@@ -7226,7 +7226,7 @@ var CLASS_RULES = [
   },
   {
     taskClass: "feature",
-    pattern: /\b(build|create|implement|integrate|add|design|make an? (?:app|tool|page|feature))\b/i,
+    pattern: /\b(build|create|implement|integrate|add|design|enhance|improve|make an? (?:app|tool|page|feature))\b/i,
     weight: 3
   },
   {
@@ -7241,6 +7241,9 @@ var countMatches = (value, pattern) => {
 };
 var clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 var classifyTask = (prompt) => {
+  if (/^(?:please\s+)?(?:answer|output|print|reply|respond|return|say)\b/i.test(prompt.trim()) && /\b(?:do not use tools|no tools|only)\b/i.test(prompt)) {
+    return "question";
+  }
   let best = {
     taskClass: prompt.trim().endsWith("?") ? "question" : "feature",
     score: 0
@@ -7294,12 +7297,18 @@ var analyzePrompt = (prompt) => {
   if (/\b(entire|end[- ]to[- ]end|full|complete|production[- ]ready|whole|across the|from scratch|perfect app|all pages|all files)\b/i.test(normalized)) {
     scopeScore += 2;
   }
-  if (/\b(single|one|only|just)\s+(?:file|line|typo|function|component)\b/i.test(normalized)) {
-    scopeScore -= 1;
+  if (/\b(?:impress me|make (?:the |this )?(?:app|product|site|system|codebase) better|improve (?:the |this )?(?:app|product|site|system|codebase)(?:\s|$))\b/i.test(normalized)) {
+    scopeScore += 3;
+  }
+  if (/\b(?:single|one|only|just)\s+(?:file|line|typo|function|component)\b/i.test(normalized)) {
+    scopeScore -= 2;
+  }
+  if (/\b(?:typo|one[- ]line|copy change|text change)\b/i.test(normalized)) {
+    scopeScore -= 2;
   }
   scopeScore = clamp(scopeScore, 0, 5);
   let ambiguityScore = normalized.length === 0 ? 0.9 : 0.34;
-  if (/\b(whatever|somehow|i don'?t know|make it better|improve it|perfect|best possible|as needed|etc\.?|something|doesn'?t work)\b/i.test(normalized)) {
+  if (/\b(whatever|somehow|i don'?t know|figure it out|impress me|make (?:it|.+) better|improve it|perfect|best possible|as needed|etc\.?|something|doesn'?t work)\b/i.test(normalized)) {
     ambiguityScore += 0.28;
   }
   if (taskClass !== "question" && fileReferences === 0)
@@ -7314,9 +7323,12 @@ var analyzePrompt = (prompt) => {
   if (/```|\btests? (?:must|should|expect)|\bexpected (?:result|output|behavior)\b/i.test(normalized)) {
     ambiguityScore -= 0.12;
   }
+  if (/^(?:please\s+)?(?:answer|output|print|reply|respond|return|say)\b/i.test(normalized) && /\b(?:do not use tools|no tools|only)\b/i.test(normalized)) {
+    ambiguityScore = Math.min(ambiguityScore, 0.12);
+  }
   ambiguityScore = clamp(ambiguityScore, 0.08, 0.95);
   const signals = {
-    external: taskClass === "research" || /\b(api|external|third[- ]party|internet|web search|documentation|docs|oauth|integration|connector|scrape|provider)\b/i.test(normalized),
+    external: taskClass === "research" || /\b(api|auth(?:entication)?|external|google sign[- ]in|oauth|payment|provider|sign[- ]in provider|stripe|third[- ]party|internet|web search|documentation|docs|integration|connector|scrape|webhook)\b/i.test(normalized),
     tests: /\b(test(?:s|ed|ing)?|vitest|jest|pytest|specs?|coverage|qa|regression suite|typecheck|lint)\b/i.test(normalized),
     browser: /\b(browser|playwright|website|webpage|web app|ui|ux|screenshot|chrome|safari|live site|visual)\b/i.test(normalized),
     deploy: /\b(deploy|deployment|production|release|publish|ship|vercel|cloudflare|app store)\b/i.test(normalized),
@@ -7349,43 +7361,62 @@ var analyzePrompt = (prompt) => {
 };
 
 // ../core/dist/calibration.js
-var CALIBRATION_BOUNDS = [0.6, 1.75];
-var RATIO_BOUNDS = [0.25, 4];
+var CALIBRATION_BOUNDS = [0.55, 1.8];
+var LEARNING_RATIO_BOUNDS = [0.08, 8];
+var ROBUST_RATIO_BOUNDS = [0.25, 4];
+var CENTER_PRIOR_STRENGTH = 8;
 var clamp2 = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
-var median = (values) => {
-  if (values.length === 0)
+var round = (value) => Math.round(value * 1e3) / 1e3;
+var weightedQuantile = (items, probability) => {
+  if (items.length === 0)
     return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 1)
-    return sorted[middle] ?? 0;
-  return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+  const sorted = [...items].sort((first, second) => first.value - second.value);
+  const totalWeight = sorted.reduce((sum, item) => sum + item.weight, 0);
+  const target = clamp2(probability, 0, 1) * totalWeight;
+  let cumulative = 0;
+  let previousPosition = 0;
+  let previousValue = sorted[0]?.value ?? 0;
+  for (const item of sorted) {
+    const position = cumulative + item.weight / 2;
+    if (target <= position) {
+      if (position <= previousPosition)
+        return item.value;
+      const fraction = clamp2((target - previousPosition) / (position - previousPosition), 0, 1);
+      return previousValue + (item.value - previousValue) * fraction;
+    }
+    previousPosition = position;
+    previousValue = item.value;
+    cumulative += item.weight;
+  }
+  return sorted.at(-1)?.value ?? 0;
+};
+var weightedMean = (items) => {
+  const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight <= 0)
+    return 0;
+  return items.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
 };
 var robustLogCenter = (samples) => {
-  const values = samples.map((sample) => Math.log(clamp2(sample.actualMinutes / sample.estimatedMinutes, ...RATIO_BOUNDS)));
+  const values = samples.map(({ logRatio, weight }) => ({ value: logRatio, weight }));
   if (values.length === 0)
     return 0;
-  const center = median(values);
-  const mad = median(values.map((value) => Math.abs(value - center)));
+  const center = weightedQuantile(values, 0.5);
+  const mad = weightedQuantile(values.map((item) => ({ value: Math.abs(item.value - center), weight: item.weight })), 0.5);
   const limit = Math.max(0.18, 2.5 * 1.4826 * mad);
-  const winsorized = values.map((value) => clamp2(value, center - limit, center + limit));
-  return winsorized.reduce((sum, value) => sum + value, 0) / winsorized.length;
+  return weightedMean(values.map((item) => ({
+    value: clamp2(item.value, center - limit, center + limit),
+    weight: item.weight
+  })));
 };
-var robustDispersionMultiplier = (samples) => {
-  if (samples.length < 8)
+var robustDispersionMultiplier = (samples, effectiveSampleCount) => {
+  if (samples.length < 8 || effectiveSampleCount < 6)
     return 1;
-  const values = samples.map((sample) => Math.log(clamp2(sample.actualMinutes / sample.estimatedMinutes, ...RATIO_BOUNDS)));
-  const center = median(values);
-  const robustScale = Math.max(0.08, 1.4826 * median(values.map((value) => Math.abs(value - center))));
+  const values = samples.map(({ logRatio, weight }) => ({ value: logRatio, weight }));
+  const center = weightedQuantile(values, 0.5);
+  const robustScale = Math.max(0.08, 1.4826 * weightedQuantile(values.map((item) => ({ value: Math.abs(item.value - center), weight: item.weight })), 0.5));
   const rawMultiplier = clamp2(robustScale / 0.34, 0.65, 1.8);
-  const evidenceWeight = samples.length / (samples.length + 12);
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + 12);
   return 1 + (rawMultiplier - 1) * evidenceWeight;
-};
-var shrinkToward = (prior, samples, priorStrength) => {
-  if (samples.length === 0)
-    return prior;
-  const weight = samples.length / (samples.length + priorStrength);
-  return prior * (1 - weight) + robustLogCenter(samples) * weight;
 };
 var isEstimateInput = (value) => "prompt" in value && typeof value.prompt === "string";
 var normalizeContext = (context) => {
@@ -7401,64 +7432,107 @@ var normalizeContext = (context) => {
     speed: context.speed
   };
 };
-var usableSamples = (samples) => samples.filter((sample) => Number.isFinite(sample.estimatedMinutes) && Number.isFinite(sample.actualMinutes) && sample.estimatedMinutes > 0 && sample.actualMinutes > 0);
+var candidateSamples = (samples) => samples.filter((sample) => Number.isFinite(sample.estimatedMinutes) && Number.isFinite(sample.actualMinutes) && sample.estimatedMinutes > 0 && sample.actualMinutes > 0);
+var similarityWeight = (sample, target) => {
+  let weight = 0.28;
+  if (target.provider && sample.provider)
+    weight *= sample.provider === target.provider ? 1.75 : 0.55;
+  if (target.taskClass && sample.taskClass)
+    weight *= sample.taskClass === target.taskClass ? 1.75 : 0.5;
+  if (target.model && sample.model) {
+    weight *= sample.model.trim().toLowerCase() === target.model.trim().toLowerCase() ? 1.35 : 0.82;
+  }
+  if (target.effort && sample.effort)
+    weight *= sample.effort === target.effort ? 1.18 : 0.86;
+  if (target.speed && sample.speed)
+    weight *= sample.speed === target.speed ? 1.12 : 0.9;
+  return clamp2(weight, 0.08, 1);
+};
+var calibrationLevel = (samples, target) => {
+  const model = target.model?.trim().toLowerCase();
+  const exact = samples.filter((sample) => (!target.provider || sample.provider === target.provider) && (!target.taskClass || sample.taskClass === target.taskClass) && (!model || sample.model?.trim().toLowerCase() === model) && (!target.effort || sample.effort === target.effort) && (!target.speed || sample.speed === target.speed));
+  if (exact.length >= 4 && Boolean(model || target.effort || target.speed)) {
+    return { level: "model-effort", matchedSampleCount: exact.length };
+  }
+  const providerTask = samples.filter((sample) => (!target.provider || sample.provider === target.provider) && (!target.taskClass || sample.taskClass === target.taskClass));
+  if (providerTask.length >= 3 && target.provider && target.taskClass) {
+    return { level: "provider-task", matchedSampleCount: providerTask.length };
+  }
+  const task = samples.filter((sample) => !target.taskClass || sample.taskClass === target.taskClass);
+  if (task.length >= 2 && target.taskClass)
+    return { level: "task", matchedSampleCount: task.length };
+  const provider = samples.filter((sample) => !target.provider || sample.provider === target.provider);
+  if (provider.length >= 2 && target.provider)
+    return { level: "provider", matchedSampleCount: provider.length };
+  return { level: "global", matchedSampleCount: samples.length };
+};
+var coverageMultiplier = (samples, key, probability, minimumSamples, effectiveSampleCount, fallback) => {
+  const values = samples.flatMap(({ sample, weight }) => {
+    const estimate = sample[key];
+    if (!Number.isFinite(estimate) || (estimate ?? 0) <= 0)
+      return [];
+    return [{
+      value: Math.log(clamp2(sample.actualMinutes / (estimate ?? 1), ...ROBUST_RATIO_BOUNDS)),
+      weight
+    }];
+  });
+  if (values.length < minimumSamples)
+    return fallback;
+  const rawCorrection = weightedQuantile(values, probability);
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + (probability >= 0.95 ? 18 : 12));
+  return clamp2(Math.exp(rawCorrection * evidenceWeight), ...CALIBRATION_BOUNDS);
+};
 var calibrate = (samples, context) => {
-  const usable = usableSamples(samples);
+  const candidates = candidateSamples(samples);
+  const target = normalizeContext(context);
+  const usable = candidates.filter((sample) => {
+    const ratio = sample.actualMinutes / sample.estimatedMinutes;
+    return ratio >= LEARNING_RATIO_BOUNDS[0] && ratio <= LEARNING_RATIO_BOUNDS[1];
+  });
+  const excludedSampleCount = candidates.length - usable.length;
   if (usable.length === 0) {
     return {
       multiplier: 1,
       dispersionMultiplier: 1,
-      sampleCount: 0,
+      quantileMultipliers: { p50: 1, p80: 1, p95: 1 },
+      sampleCount: candidates.length,
       matchedSampleCount: 0,
+      effectiveSampleCount: 0,
+      excludedSampleCount,
       level: "none",
       applied: false,
       bounds: CALIBRATION_BOUNDS
     };
   }
-  const target = normalizeContext(context);
-  let logMultiplier = shrinkToward(0, usable, 12);
-  let matchedSampleCount = usable.length;
-  let dispersionSamples = usable;
-  let level = "global";
-  const applyLevel = (cohort, nextLevel, priorStrength, minimumSamples) => {
-    if (cohort.length < minimumSamples)
-      return;
-    logMultiplier = shrinkToward(logMultiplier, cohort, priorStrength);
-    matchedSampleCount = cohort.length;
-    level = nextLevel;
-    if (cohort.length >= 8)
-      dispersionSamples = cohort;
+  const weighted = usable.map((sample) => ({
+    sample,
+    weight: similarityWeight(sample, target),
+    logRatio: Math.log(clamp2(sample.actualMinutes / sample.estimatedMinutes, ...ROBUST_RATIO_BOUNDS))
+  }));
+  const effectiveSampleCount = weighted.reduce((sum, sample) => sum + sample.weight, 0);
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + CENTER_PRIOR_STRENGTH);
+  const multiplier = clamp2(Math.exp(robustLogCenter(weighted) * evidenceWeight), ...CALIBRATION_BOUNDS);
+  const dispersionMultiplier = robustDispersionMultiplier(weighted, effectiveSampleCount);
+  const p80Multiplier = coverageMultiplier(weighted, "estimatedP80Minutes", 0.8, 6, effectiveSampleCount, multiplier);
+  const p95Multiplier = coverageMultiplier(weighted, "estimatedP95Minutes", 0.95, 12, effectiveSampleCount, multiplier);
+  const { level, matchedSampleCount } = calibrationLevel(usable, target);
+  const roundedMultiplier = round(multiplier);
+  const roundedDispersion = round(dispersionMultiplier);
+  const quantileMultipliers = {
+    p50: roundedMultiplier,
+    p80: round(p80Multiplier),
+    p95: round(p95Multiplier)
   };
-  const providerSamples = target.provider ? usable.filter((sample) => sample.provider === target.provider) : [];
-  applyLevel(providerSamples, "provider", 7, 2);
-  const taskSamples = target.taskClass ? usable.filter((sample) => sample.taskClass === target.taskClass) : [];
-  applyLevel(taskSamples, "task", 6, 2);
-  const providerTaskSamples = target.provider && target.taskClass ? usable.filter((sample) => sample.provider === target.provider && sample.taskClass === target.taskClass) : [];
-  applyLevel(providerTaskSamples, "provider-task", 4, 3);
-  const normalizedModel = target.model?.trim().toLowerCase();
-  const exactSamples = usable.filter((sample) => {
-    if (target.taskClass && sample.taskClass !== target.taskClass)
-      return false;
-    if (target.provider && sample.provider !== target.provider)
-      return false;
-    if (normalizedModel && sample.model?.trim().toLowerCase() !== normalizedModel)
-      return false;
-    if (target.effort && sample.effort !== target.effort)
-      return false;
-    if (target.speed && sample.speed !== target.speed)
-      return false;
-    return Boolean(normalizedModel || target.effort || target.speed);
-  });
-  applyLevel(exactSamples, "model-effort", 3, 4);
-  const multiplier = clamp2(Math.exp(logMultiplier), ...CALIBRATION_BOUNDS);
-  const dispersionMultiplier = robustDispersionMultiplier(dispersionSamples);
   return {
-    multiplier: Math.round(multiplier * 1e3) / 1e3,
-    dispersionMultiplier: Math.round(dispersionMultiplier * 1e3) / 1e3,
-    sampleCount: usable.length,
+    multiplier: roundedMultiplier,
+    dispersionMultiplier: roundedDispersion,
+    quantileMultipliers,
+    sampleCount: candidates.length,
     matchedSampleCount,
+    effectiveSampleCount: round(effectiveSampleCount),
+    excludedSampleCount,
     level,
-    applied: Math.abs(multiplier - 1) >= 5e-3 || Math.abs(dispersionMultiplier - 1) >= 0.025,
+    applied: Math.abs(roundedMultiplier - 1) >= 5e-3 || Math.abs(roundedDispersion - 1) >= 0.025 || Math.abs(quantileMultipliers.p80 - roundedMultiplier) >= 0.025 || Math.abs(quantileMultipliers.p95 - roundedMultiplier) >= 0.025,
     bounds: CALIBRATION_BOUNDS
   };
 };
@@ -7472,7 +7546,7 @@ var STAGES = [
   { stage: "deliver", label: "Deliver", modelBound: false }
 ];
 var BASE_MINUTES = {
-  question: { orient: 1.5, reason: 5, change: 0.5, verify: 1, deliver: 1 },
+  question: { orient: 1, reason: 2, change: 0.2, verify: 0.4, deliver: 0.5 },
   research: { orient: 3, reason: 14, change: 1, verify: 3, deliver: 2 },
   review: { orient: 4, reason: 10, change: 1, verify: 6, deliver: 2 },
   diagnose: { orient: 5, reason: 13, change: 3, verify: 5, deliver: 2 },
@@ -7482,11 +7556,11 @@ var BASE_MINUTES = {
   migration: { orient: 9, reason: 16, change: 35, verify: 18, deliver: 5 }
 };
 var SCOPE_FACTORS = {
-  micro: 0.5,
-  small: 0.76,
+  micro: 0.24,
+  small: 0.62,
   medium: 1,
-  large: 1.55,
-  project: 2.35
+  large: 1.65,
+  project: 2.6
 };
 var SCOPE_STAGE_WEIGHTS = {
   orient: 0.65,
@@ -7534,6 +7608,13 @@ var SIGNAL_ADDITIONS = {
   browser: { orient: 1, reason: 0.5, change: 3, verify: 5, deliver: 0.5 },
   deploy: { orient: 0.5, reason: 0.5, change: 1.5, verify: 5, deliver: 8 },
   destructive: { orient: 1, reason: 2, change: 1, verify: 4, deliver: 1 }
+};
+var LOOP_INTERACTION_ADDITIONS = {
+  orient: 0.25,
+  reason: 0.75,
+  change: 1.5,
+  verify: 2,
+  deliver: 0.8
 };
 var DEFAULT_SEED = 1095062593;
 var SIMULATION_COUNT = 1600;
@@ -7684,6 +7765,13 @@ var stageCenters = (input, analysis, calibrationMultiplier) => {
     codex: { orient: 0.96, reason: 1, change: 0.95, verify: 0.98, deliver: 1 },
     claude: { orient: 1, reason: 0.97, change: 1, verify: 1, deliver: 0.98 }
   };
+  const operationalLoopCount = [
+    analysis.signals.external,
+    analysis.signals.tests,
+    analysis.signals.browser,
+    analysis.signals.deploy
+  ].filter(Boolean).length;
+  const loopPairs = Math.max(0, operationalLoopCount * (operationalLoopCount - 1) / 2);
   const centers = {};
   const drivers = {};
   for (const definition of STAGES) {
@@ -7719,6 +7807,11 @@ var stageCenters = (input, analysis, calibrationMultiplier) => {
       if (SIGNAL_ADDITIONS[signal][stage] >= 1)
         stageDrivers.push(signal);
     }
+    if (loopPairs > 0) {
+      minutes += LOOP_INTERACTION_ADDITIONS[stage] * loopPairs;
+      if (LOOP_INTERACTION_ADDITIONS[stage] * loopPairs >= 1)
+        stageDrivers.push("feedback-loop interaction");
+    }
     minutes *= calibrationMultiplier;
     if (Math.abs(calibrationMultiplier - 1) >= 5e-3)
       stageDrivers.push("personal calibration");
@@ -7735,6 +7828,83 @@ var simulationSigma = (analysis, dispersionMultiplier) => {
   if (analysis.taskClass === "research" || analysis.taskClass === "diagnose")
     sigma += 0.035;
   return sigma * dispersionMultiplier;
+};
+var surpriseProbability = (analysis) => {
+  const ambiguityBase = { low: 0.045, medium: 0.13, high: 0.24 };
+  let probability = ambiguityBase[analysis.ambiguity];
+  if (analysis.signals.external)
+    probability += 0.07;
+  if (analysis.signals.deploy)
+    probability += 0.04;
+  if (analysis.signals.destructive)
+    probability += 0.035;
+  if (analysis.taskClass === "diagnose")
+    probability += 0.035;
+  if (analysis.taskClass === "migration")
+    probability += 0.045;
+  return clamp3(probability, 0.04, 0.42);
+};
+var SURPRISE_STAGE_WEIGHTS = {
+  orient: 0.45,
+  reason: 0.9,
+  change: 1,
+  verify: 1.15,
+  deliver: 0.35
+};
+var adjustedQuantiles = (minutes, calibration) => {
+  const centerMultiplier = Math.max(0.01, calibration.quantileMultipliers.p50);
+  const p80 = Math.max(minutes.p50, roundMinute(minutes.p80 * calibration.quantileMultipliers.p80 / centerMultiplier));
+  const p95 = Math.max(p80, roundMinute(minutes.p95 * calibration.quantileMultipliers.p95 / centerMultiplier));
+  return { ...minutes, p80, p95 };
+};
+var totalCenter = (input, analysis, calibrationMultiplier) => Object.values(stageCenters(input, analysis, calibrationMultiplier).centers).reduce((sum, value) => sum + value, 0);
+var rankedDrivers = (input, analysis, centers, calibration) => {
+  const current = Object.values(centers).reduce((sum, value) => sum + value, 0);
+  const drivers = [];
+  const addImpact = (label, detail, counterfactual) => {
+    const impactMinutes = roundMinute(current - counterfactual);
+    if (Math.abs(impactMinutes) < 0.5)
+      return;
+    drivers.push({ label, detail, impactMinutes });
+  };
+  if (analysis.scope !== "medium") {
+    addImpact(`${analysis.scope} scope`, "Change surface versus a medium task", totalCenter(input, { ...analysis, scope: "medium" }, calibration.multiplier));
+  }
+  if (analysis.ambiguity !== "medium") {
+    addImpact(`${analysis.ambiguity} ambiguity`, analysis.ambiguity === "high" ? "Unknowns also widen the tail" : "Clearer constraints reduce rework", totalCenter(input, { ...analysis, ambiguity: "medium", ambiguityScore: 0.5 }, calibration.multiplier));
+  }
+  const signalLabels = {
+    external: ["external dependency", "Network and service feedback"],
+    tests: ["test verification", "Automated validation loop"],
+    browser: ["browser verification", "Rendered-flow validation"],
+    deploy: ["production deployment", "Build, release, and readback"],
+    destructive: ["safety safeguards", "Extra checks before mutation"]
+  };
+  for (const signal of Object.keys(signalLabels)) {
+    if (!analysis.signals[signal])
+      continue;
+    const [label, detail] = signalLabels[signal];
+    addImpact(label, detail, totalCenter(input, { ...analysis, signals: { ...analysis.signals, [signal]: false } }, calibration.multiplier));
+  }
+  if (input.effort !== "medium") {
+    addImpact(`${input.effort} reasoning effort`, "Deliberation versus medium effort", totalCenter({ ...input, effort: "medium" }, analysis, calibration.multiplier));
+  }
+  if (input.speed === "fast") {
+    addImpact("fast mode", "Only model-bound stages accelerate", totalCenter({ ...input, speed: "standard" }, analysis, calibration.multiplier));
+  }
+  if (input.repo && repoPrior(input.repo) > 1.01) {
+    const { repo: _repo, ...withoutRepo } = input;
+    addImpact("repository shape", "Weak orientation prior, not task complexity", totalCenter(withoutRepo, analysis, calibration.multiplier));
+  }
+  if (Math.abs(calibration.multiplier - 1) >= 5e-3) {
+    addImpact("personal history", `${calibration.effectiveSampleCount} effective similar runs`, totalCenter(input, analysis, 1));
+  }
+  drivers.sort((first, second) => Math.abs(second.impactMinutes ?? 0) - Math.abs(first.impactMinutes ?? 0));
+  drivers.push({
+    label: `${analysis.taskClass} reference class`,
+    detail: "Stage pattern for this kind of task"
+  });
+  return drivers;
 };
 var confidenceFor = (analysis, minutes, calibrationSamples) => {
   const spread = Math.round(minutes.p95 / Math.max(0.1, minutes.p50) * 100) / 100;
@@ -7784,6 +7954,7 @@ var estimateTask = (input) => {
   const resolvedSeed = hashSeed(input.seed);
   const random = createRandom(resolvedSeed);
   const sigma = simulationSigma(analysis, calibration.dispersionMultiplier);
+  const tailProbability = surpriseProbability(analysis);
   const valuesByStage = {
     orient: [],
     reason: [],
@@ -7794,18 +7965,20 @@ var estimateTask = (input) => {
   const totals = [];
   for (let simulation = 0; simulation < SIMULATION_COUNT; simulation += 1) {
     const sharedShock = normal(random);
+    const surprise = random() < tailProbability;
+    const surpriseMagnitude = surprise ? 0.22 + Math.abs(normal(random)) * 0.34 : 0;
     let total = 0;
     for (const definition of STAGES) {
       const stageShock = normal(random);
       const stageSigma = sigma * (definition.stage === "reason" ? 1.08 : definition.stage === "deliver" ? 0.82 : 1);
       const combinedShock = sharedShock * 0.48 + stageShock * 0.877;
-      const sampled = centers[definition.stage] * Math.exp(combinedShock * stageSigma);
+      const sampled = centers[definition.stage] * Math.exp(combinedShock * stageSigma) * (1 + surpriseMagnitude * SURPRISE_STAGE_WEIGHTS[definition.stage]);
       valuesByStage[definition.stage].push(sampled);
       total += sampled;
     }
     totals.push(total);
   }
-  const minutes = summarize(totals);
+  const minutes = adjustedQuantiles(summarize(totals), calibration);
   const stages = STAGES.map((definition) => {
     const stageMinutes = summarize(valuesByStage[definition.stage]);
     return {
@@ -7815,18 +7988,7 @@ var estimateTask = (input) => {
       drivers: stageDrivers[definition.stage]
     };
   });
-  const prior = repoPrior(input.repo);
-  const drivers = [...analysis.drivers];
-  if (prior > 1.01)
-    drivers.push(`repository prior +${Math.round((prior - 1) * 100)}% at orientation`);
-  if (input.speed === "fast")
-    drivers.push("fast mode on model-bound stages only");
-  if (Math.abs(calibration.multiplier - 1) >= 5e-3) {
-    drivers.push(`personal center calibration \xD7${calibration.multiplier}`);
-  }
-  if (Math.abs(calibration.dispersionMultiplier - 1) >= 0.025) {
-    drivers.push(`personal interval width \xD7${calibration.dispersionMultiplier}`);
-  }
+  const drivers = rankedDrivers(input, analysis, centers, calibration);
   const assumptions = [];
   if (!input.repo || Object.values(input.repo).every((value) => !safeMetric(value))) {
     assumptions.push("Repository size not supplied; neutral repository prior used.");
@@ -7837,6 +7999,9 @@ var estimateTask = (input) => {
     assumptions.push("No production deployment included.");
   if (!calibration.applied)
     assumptions.push("No material personal calibration available.");
+  if (calibration.excludedSampleCount > 0) {
+    assumptions.push(`${calibration.excludedSampleCount} implausible stop ${calibration.excludedSampleCount === 1 ? "boundary was" : "boundaries were"} excluded from learning.`);
+  }
   return {
     minutes,
     formatted: {
@@ -7848,7 +8013,7 @@ var estimateTask = (input) => {
     },
     stages,
     analysis,
-    confidence: confidenceFor(analysis, minutes, calibration.sampleCount),
+    confidence: confidenceFor(analysis, minutes, Math.floor(calibration.effectiveSampleCount)),
     drivers,
     assumptions,
     calibration,
@@ -8258,7 +8423,7 @@ var PRIVATE_KEY_PATTERN = /^[a-f0-9]{32}$/u;
 function positiveFinite(value) {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
-function median2(values) {
+function median(values) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
@@ -8268,7 +8433,7 @@ function median2(values) {
   const previous = sorted[middle - 1];
   return previous === void 0 ? current : (current + previous) / 2;
 }
-function round(value, digits = 2) {
+function round2(value, digits = 2) {
   if (value === null) return null;
   const scale = 10 ** digits;
   return Math.round(value * scale) / scale;
@@ -8694,6 +8859,19 @@ var CalibrationStore = class {
       (entry) => entry.elapsedMs !== void 0 && entry.outcome !== void 0
     );
     const successful = completed.filter((entry) => entry.outcome === "success");
+    const calibrationSamples = successful.map((entry) => ({
+      estimatedMinutes: entry.estimate.minutes.p50,
+      estimatedP80Minutes: entry.estimate.minutes.p80,
+      estimatedP95Minutes: entry.estimate.minutes.p95,
+      actualMinutes: entry.elapsedMs / 6e4,
+      taskClass: entry.features.prompt.taskClass,
+      provider: entry.features.provider,
+      model: entry.features.model,
+      effort: entry.features.effort,
+      speed: entry.features.speed
+    }));
+    const learningEvidence = calibrate(calibrationSamples, {});
+    const eligibleCalibrationRuns = successful.length - learningEvidence.excludedSampleCount;
     const actualMinutes = successful.map((entry) => positiveFinite(entry.elapsedMs / 6e4));
     const absoluteErrors = successful.map((entry) => Math.abs(entry.elapsedMs / 6e4 - entry.estimate.minutes.p50));
     const coverage = (quantile) => {
@@ -8702,16 +8880,18 @@ var CalibrationStore = class {
       return inside / successful.length;
     };
     return {
-      state: successful.length >= 20 ? "personalized" : successful.length >= 3 ? "learning" : "cold-start",
+      state: eligibleCalibrationRuns >= 20 ? "personalized" : eligibleCalibrationRuns >= 3 ? "learning" : "cold-start",
       startedRuns: history.length,
       completedRuns: completed.length,
       successfulRuns: successful.length,
+      eligibleCalibrationRuns,
+      excludedCalibrationRuns: learningEvidence.excludedSampleCount,
       failedRuns: completed.filter((entry) => entry.outcome === "failed").length,
       censoredRuns: completed.filter((entry) => entry.outcome === "censored").length,
-      medianActualMinutes: round(median2(actualMinutes)),
-      medianAbsoluteErrorMinutes: round(median2(absoluteErrors)),
-      p50ObservedCoverage: round(coverage("p50"), 3),
-      p80ObservedCoverage: round(coverage("p80"), 3)
+      medianActualMinutes: round2(median(actualMinutes)),
+      medianAbsoluteErrorMinutes: round2(median(absoluteErrors)),
+      p50ObservedCoverage: round2(coverage("p50"), 3),
+      p80ObservedCoverage: round2(coverage("p80"), 3)
     };
   }
   async calibrationSamples(limit = 200) {
@@ -8720,6 +8900,8 @@ var CalibrationStore = class {
       (entry) => entry.elapsedMs !== void 0 && entry.outcome === "success"
     ).slice(0, Math.max(0, limit)).map((entry) => ({
       estimatedMinutes: entry.estimate.minutes.p50,
+      estimatedP80Minutes: entry.estimate.minutes.p80,
+      estimatedP95Minutes: entry.estimate.minutes.p95,
       actualMinutes: entry.elapsedMs / 6e4,
       taskClass: entry.features.prompt.taskClass,
       provider: entry.features.provider,
@@ -33597,7 +33779,9 @@ async function estimateCommand(args) {
     return;
   }
   output(`P50 ${estimate.formatted.p50} \xB7 P80 ${estimate.formatted.p80}`, false);
-  if (estimate.drivers.length > 0) output(`Drivers: ${estimate.drivers.slice(0, 3).join(" \xB7 ")}`, false);
+  if (estimate.drivers.length > 0) {
+    output(`Drivers: ${estimate.drivers.slice(0, 3).map((driver) => driver.label).join(" \xB7 ")}`, false);
+  }
 }
 async function calibrateCommand(args) {
   const store = new CalibrationStore({ dataDir: optionString(args, "data-dir") });
@@ -33606,7 +33790,7 @@ async function calibrateCommand(args) {
     output(status, true);
     return;
   }
-  output(`${status.state} \xB7 ${status.successfulRuns} completed runs`, false);
+  output(`${status.state} \xB7 ${status.eligibleCalibrationRuns} eligible runs`, false);
   if (status.medianAbsoluteErrorMinutes !== null) {
     output(`Median error ${status.medianAbsoluteErrorMinutes}m \xB7 P80 coverage ${Math.round((status.p80ObservedCoverage ?? 0) * 100)}%`, false);
   }

@@ -147,7 +147,9 @@ async function estimateCommand(args: ParsedCommandArgs): Promise<void> {
     return;
   }
   output(`P50 ${estimate.formatted.p50} · P80 ${estimate.formatted.p80}`, false);
-  if (estimate.drivers.length > 0) output(`Drivers: ${estimate.drivers.slice(0, 3).join(' · ')}`, false);
+  if (estimate.drivers.length > 0) {
+    output(`Drivers: ${estimate.drivers.slice(0, 3).map((driver) => driver.label).join(' · ')}`, false);
+  }
 }
 
 async function calibrateCommand(args: ParsedCommandArgs): Promise<void> {
@@ -157,7 +159,7 @@ async function calibrateCommand(args: ParsedCommandArgs): Promise<void> {
     output(status, true);
     return;
   }
-  output(`${status.state} · ${status.successfulRuns} completed runs`, false);
+  output(`${status.state} · ${status.eligibleCalibrationRuns} eligible runs`, false);
   if (status.medianAbsoluteErrorMinutes !== null) {
     output(`Median error ${status.medianAbsoluteErrorMinutes}m · P80 coverage ${Math.round((status.p80ObservedCoverage ?? 0) * 100)}%`, false);
   }

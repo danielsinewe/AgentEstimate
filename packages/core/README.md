@@ -28,9 +28,11 @@ console.log(estimate.formatted.p50, estimate.formatted.p95);
   model-bound stages; it cannot pretend tests or deployments run faster.
 - Repository shape as a capped, weak logarithmic prior. A large repository
   matters most during orientation and cannot dominate task scope.
-- Optional personal history through robust hierarchical calibration. Ratios
-  are winsorized, cohorts shrink toward broader priors, and the final
-  multiplier is clamped to `0.6…1.75`.
+- Pairwise interaction costs for sequential test, browser, service, and release
+  loops, plus an ambiguity-sensitive rework tail.
+- Optional personal history through one similarity-weighted evidence pool.
+  Each run is counted once, implausible stop boundaries are quarantined, and
+  enough history can correct upper-quantile coverage separately from P50.
 
 ## Privacy
 

@@ -8,54 +8,90 @@ import type {
   TaskClass,
 } from './types.js';
 
-const CALIBRATION_BOUNDS = [0.6, 1.75] as const;
-const RATIO_BOUNDS = [0.25, 4] as const;
+const CALIBRATION_BOUNDS = [0.55, 1.8] as const;
+const LEARNING_RATIO_BOUNDS = [0.08, 8] as const;
+const ROBUST_RATIO_BOUNDS = [0.25, 4] as const;
+const CENTER_PRIOR_STRENGTH = 8;
+
+interface WeightedValue {
+  value: number;
+  weight: number;
+}
+
+interface WeightedSample {
+  sample: CalibrationSample;
+  weight: number;
+  logRatio: number;
+}
 
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(maximum, Math.max(minimum, value));
 
-const median = (values: readonly number[]): number => {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 1) return sorted[middle] ?? 0;
-  return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+const round = (value: number): number => Math.round(value * 1_000) / 1_000;
+
+const weightedQuantile = (items: readonly WeightedValue[], probability: number): number => {
+  if (items.length === 0) return 0;
+  const sorted = [...items].sort((first, second) => first.value - second.value);
+  const totalWeight = sorted.reduce((sum, item) => sum + item.weight, 0);
+  const target = clamp(probability, 0, 1) * totalWeight;
+  let cumulative = 0;
+  let previousPosition = 0;
+  let previousValue = sorted[0]?.value ?? 0;
+  for (const item of sorted) {
+    const position = cumulative + item.weight / 2;
+    if (target <= position) {
+      if (position <= previousPosition) return item.value;
+      const fraction = clamp((target - previousPosition) / (position - previousPosition), 0, 1);
+      return previousValue + (item.value - previousValue) * fraction;
+    }
+    previousPosition = position;
+    previousValue = item.value;
+    cumulative += item.weight;
+  }
+  return sorted.at(-1)?.value ?? 0;
 };
 
-/** A winsorized log center resists a few stopped timers or runaway tasks. */
-const robustLogCenter = (samples: readonly CalibrationSample[]): number => {
-  const values = samples.map((sample) =>
-    Math.log(clamp(sample.actualMinutes / sample.estimatedMinutes, ...RATIO_BOUNDS)),
-  );
-  if (values.length === 0) return 0;
+const weightedMean = (items: readonly WeightedValue[]): number => {
+  const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight <= 0) return 0;
+  return items.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
+};
 
-  const center = median(values);
-  const mad = median(values.map((value) => Math.abs(value - center)));
+/** A winsorized weighted log center resists stopped timers and runaway tasks. */
+const robustLogCenter = (samples: readonly WeightedSample[]): number => {
+  const values = samples.map(({ logRatio, weight }) => ({ value: logRatio, weight }));
+  if (values.length === 0) return 0;
+  const center = weightedQuantile(values, 0.5);
+  const mad = weightedQuantile(
+    values.map((item) => ({ value: Math.abs(item.value - center), weight: item.weight })),
+    0.5,
+  );
   const limit = Math.max(0.18, 2.5 * 1.4826 * mad);
-  const winsorized = values.map((value) => clamp(value, center - limit, center + limit));
-  return winsorized.reduce((sum, value) => sum + value, 0) / winsorized.length;
-};
-
-const robustDispersionMultiplier = (samples: readonly CalibrationSample[]): number => {
-  if (samples.length < 8) return 1;
-  const values = samples.map((sample) =>
-    Math.log(clamp(sample.actualMinutes / sample.estimatedMinutes, ...RATIO_BOUNDS)),
+  return weightedMean(
+    values.map((item) => ({
+      value: clamp(item.value, center - limit, center + limit),
+      weight: item.weight,
+    })),
   );
-  const center = median(values);
-  const robustScale = Math.max(0.08, 1.4826 * median(values.map((value) => Math.abs(value - center))));
-  const rawMultiplier = clamp(robustScale / 0.34, 0.65, 1.8);
-  const evidenceWeight = samples.length / (samples.length + 12);
-  return 1 + (rawMultiplier - 1) * evidenceWeight;
 };
 
-const shrinkToward = (
-  prior: number,
-  samples: readonly CalibrationSample[],
-  priorStrength: number,
+const robustDispersionMultiplier = (
+  samples: readonly WeightedSample[],
+  effectiveSampleCount: number,
 ): number => {
-  if (samples.length === 0) return prior;
-  const weight = samples.length / (samples.length + priorStrength);
-  return prior * (1 - weight) + robustLogCenter(samples) * weight;
+  if (samples.length < 8 || effectiveSampleCount < 6) return 1;
+  const values = samples.map(({ logRatio, weight }) => ({ value: logRatio, weight }));
+  const center = weightedQuantile(values, 0.5);
+  const robustScale = Math.max(
+    0.08,
+    1.4826 * weightedQuantile(
+      values.map((item) => ({ value: Math.abs(item.value - center), weight: item.weight })),
+      0.5,
+    ),
+  );
+  const rawMultiplier = clamp(robustScale / 0.34, 0.65, 1.8);
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + 12);
+  return 1 + (rawMultiplier - 1) * evidenceWeight;
 };
 
 const isEstimateInput = (value: CalibrationContext | EstimateInput): value is EstimateInput =>
@@ -75,7 +111,7 @@ const normalizeContext = (
   };
 };
 
-const usableSamples = (samples: readonly CalibrationSample[]): CalibrationSample[] =>
+const candidateSamples = (samples: readonly CalibrationSample[]): CalibrationSample[] =>
   samples.filter(
     (sample) =>
       Number.isFinite(sample.estimatedMinutes) &&
@@ -84,85 +120,149 @@ const usableSamples = (samples: readonly CalibrationSample[]): CalibrationSample
       sample.actualMinutes > 0,
   );
 
+const similarityWeight = (sample: CalibrationSample, target: CalibrationContext): number => {
+  let weight = 0.28;
+  if (target.provider && sample.provider) weight *= sample.provider === target.provider ? 1.75 : 0.55;
+  if (target.taskClass && sample.taskClass) weight *= sample.taskClass === target.taskClass ? 1.75 : 0.5;
+  if (target.model && sample.model) {
+    weight *= sample.model.trim().toLowerCase() === target.model.trim().toLowerCase() ? 1.35 : 0.82;
+  }
+  if (target.effort && sample.effort) weight *= sample.effort === target.effort ? 1.18 : 0.86;
+  if (target.speed && sample.speed) weight *= sample.speed === target.speed ? 1.12 : 0.9;
+  return clamp(weight, 0.08, 1);
+};
+
+const calibrationLevel = (
+  samples: readonly CalibrationSample[],
+  target: CalibrationContext,
+): { level: CalibrationLevel; matchedSampleCount: number } => {
+  const model = target.model?.trim().toLowerCase();
+  const exact = samples.filter((sample) =>
+    (!target.provider || sample.provider === target.provider) &&
+    (!target.taskClass || sample.taskClass === target.taskClass) &&
+    (!model || sample.model?.trim().toLowerCase() === model) &&
+    (!target.effort || sample.effort === target.effort) &&
+    (!target.speed || sample.speed === target.speed),
+  );
+  if (exact.length >= 4 && Boolean(model || target.effort || target.speed)) {
+    return { level: 'model-effort', matchedSampleCount: exact.length };
+  }
+  const providerTask = samples.filter((sample) =>
+    (!target.provider || sample.provider === target.provider) &&
+    (!target.taskClass || sample.taskClass === target.taskClass),
+  );
+  if (providerTask.length >= 3 && target.provider && target.taskClass) {
+    return { level: 'provider-task', matchedSampleCount: providerTask.length };
+  }
+  const task = samples.filter((sample) => !target.taskClass || sample.taskClass === target.taskClass);
+  if (task.length >= 2 && target.taskClass) return { level: 'task', matchedSampleCount: task.length };
+  const provider = samples.filter((sample) => !target.provider || sample.provider === target.provider);
+  if (provider.length >= 2 && target.provider) return { level: 'provider', matchedSampleCount: provider.length };
+  return { level: 'global', matchedSampleCount: samples.length };
+};
+
+const coverageMultiplier = (
+  samples: readonly WeightedSample[],
+  key: 'estimatedP80Minutes' | 'estimatedP95Minutes',
+  probability: number,
+  minimumSamples: number,
+  effectiveSampleCount: number,
+  fallback: number,
+): number => {
+  const values = samples.flatMap(({ sample, weight }) => {
+    const estimate = sample[key];
+    if (!Number.isFinite(estimate) || (estimate ?? 0) <= 0) return [];
+    return [{
+      value: Math.log(clamp(sample.actualMinutes / (estimate ?? 1), ...ROBUST_RATIO_BOUNDS)),
+      weight,
+    }];
+  });
+  if (values.length < minimumSamples) return fallback;
+  const rawCorrection = weightedQuantile(values, probability);
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + (probability >= 0.95 ? 18 : 12));
+  return clamp(Math.exp(rawCorrection * evidenceWeight), ...CALIBRATION_BOUNDS);
+};
+
 /**
- * Builds a personal multiplier through progressively more specific cohorts.
- * Every cohort is shrunk toward its parent, and the final result is clamped.
+ * Builds a personal correction from one similarity-weighted evidence pool.
+ * Each historical run contributes once, so overlapping cohorts cannot amplify
+ * a tiny sample. Extreme stop boundaries remain auditable but are quarantined.
  */
 export const calibrate = (
   samples: readonly CalibrationSample[],
   context: CalibrationContext | EstimateInput | TaskClass,
 ): CalibrationResult => {
-  const usable = usableSamples(samples);
+  const candidates = candidateSamples(samples);
+  const target = normalizeContext(context);
+  const usable = candidates.filter((sample) => {
+    const ratio = sample.actualMinutes / sample.estimatedMinutes;
+    return ratio >= LEARNING_RATIO_BOUNDS[0] && ratio <= LEARNING_RATIO_BOUNDS[1];
+  });
+  const excludedSampleCount = candidates.length - usable.length;
+
   if (usable.length === 0) {
     return {
       multiplier: 1,
       dispersionMultiplier: 1,
-      sampleCount: 0,
+      quantileMultipliers: { p50: 1, p80: 1, p95: 1 },
+      sampleCount: candidates.length,
       matchedSampleCount: 0,
+      effectiveSampleCount: 0,
+      excludedSampleCount,
       level: 'none',
       applied: false,
       bounds: CALIBRATION_BOUNDS,
     };
   }
 
-  const target = normalizeContext(context);
-  let logMultiplier = shrinkToward(0, usable, 12);
-  let matchedSampleCount = usable.length;
-  let dispersionSamples: readonly CalibrationSample[] = usable;
-  let level: CalibrationLevel = 'global';
-
-  const applyLevel = (
-    cohort: readonly CalibrationSample[],
-    nextLevel: CalibrationLevel,
-    priorStrength: number,
-    minimumSamples: number,
-  ): void => {
-    if (cohort.length < minimumSamples) return;
-    logMultiplier = shrinkToward(logMultiplier, cohort, priorStrength);
-    matchedSampleCount = cohort.length;
-    level = nextLevel;
-    if (cohort.length >= 8) dispersionSamples = cohort;
+  const weighted = usable.map((sample) => ({
+    sample,
+    weight: similarityWeight(sample, target),
+    logRatio: Math.log(clamp(sample.actualMinutes / sample.estimatedMinutes, ...ROBUST_RATIO_BOUNDS)),
+  }));
+  const effectiveSampleCount = weighted.reduce((sum, sample) => sum + sample.weight, 0);
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + CENTER_PRIOR_STRENGTH);
+  const multiplier = clamp(Math.exp(robustLogCenter(weighted) * evidenceWeight), ...CALIBRATION_BOUNDS);
+  const dispersionMultiplier = robustDispersionMultiplier(weighted, effectiveSampleCount);
+  const p80Multiplier = coverageMultiplier(
+    weighted,
+    'estimatedP80Minutes',
+    0.8,
+    6,
+    effectiveSampleCount,
+    multiplier,
+  );
+  const p95Multiplier = coverageMultiplier(
+    weighted,
+    'estimatedP95Minutes',
+    0.95,
+    12,
+    effectiveSampleCount,
+    multiplier,
+  );
+  const { level, matchedSampleCount } = calibrationLevel(usable, target);
+  const roundedMultiplier = round(multiplier);
+  const roundedDispersion = round(dispersionMultiplier);
+  const quantileMultipliers = {
+    p50: roundedMultiplier,
+    p80: round(p80Multiplier),
+    p95: round(p95Multiplier),
   };
 
-  const providerSamples = target.provider
-    ? usable.filter((sample) => sample.provider === target.provider)
-    : [];
-  applyLevel(providerSamples, 'provider', 7, 2);
-
-  const taskSamples = target.taskClass
-    ? usable.filter((sample) => sample.taskClass === target.taskClass)
-    : [];
-  applyLevel(taskSamples, 'task', 6, 2);
-
-  const providerTaskSamples =
-    target.provider && target.taskClass
-      ? usable.filter(
-          (sample) =>
-            sample.provider === target.provider && sample.taskClass === target.taskClass,
-        )
-      : [];
-  applyLevel(providerTaskSamples, 'provider-task', 4, 3);
-
-  const normalizedModel = target.model?.trim().toLowerCase();
-  const exactSamples = usable.filter((sample) => {
-    if (target.taskClass && sample.taskClass !== target.taskClass) return false;
-    if (target.provider && sample.provider !== target.provider) return false;
-    if (normalizedModel && sample.model?.trim().toLowerCase() !== normalizedModel) return false;
-    if (target.effort && sample.effort !== target.effort) return false;
-    if (target.speed && sample.speed !== target.speed) return false;
-    return Boolean(normalizedModel || target.effort || target.speed);
-  });
-  applyLevel(exactSamples, 'model-effort', 3, 4);
-
-  const multiplier = clamp(Math.exp(logMultiplier), ...CALIBRATION_BOUNDS);
-  const dispersionMultiplier = robustDispersionMultiplier(dispersionSamples);
   return {
-    multiplier: Math.round(multiplier * 1000) / 1000,
-    dispersionMultiplier: Math.round(dispersionMultiplier * 1000) / 1000,
-    sampleCount: usable.length,
+    multiplier: roundedMultiplier,
+    dispersionMultiplier: roundedDispersion,
+    quantileMultipliers,
+    sampleCount: candidates.length,
     matchedSampleCount,
+    effectiveSampleCount: round(effectiveSampleCount),
+    excludedSampleCount,
     level,
-    applied: Math.abs(multiplier - 1) >= 0.005 || Math.abs(dispersionMultiplier - 1) >= 0.025,
+    applied:
+      Math.abs(roundedMultiplier - 1) >= 0.005 ||
+      Math.abs(roundedDispersion - 1) >= 0.025 ||
+      Math.abs(quantileMultipliers.p80 - roundedMultiplier) >= 0.025 ||
+      Math.abs(quantileMultipliers.p95 - roundedMultiplier) >= 0.025,
     bounds: CALIBRATION_BOUNDS,
   };
 };

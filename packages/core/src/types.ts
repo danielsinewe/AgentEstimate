@@ -49,6 +49,9 @@ export interface TaskOptions {
 export interface CalibrationSample {
   /** The p50 estimate shown before the task started. */
   estimatedMinutes: number;
+  /** Optional upper quantiles enable direct coverage correction as history grows. */
+  estimatedP80Minutes?: number;
+  estimatedP95Minutes?: number;
   /** Elapsed active time measured after the task finished. */
   actualMinutes: number;
   taskClass?: TaskClass;
@@ -131,8 +134,18 @@ export interface CalibrationResult {
   multiplier: number;
   /** Robust residual-width adjustment, shrunk toward the cold-start spread. */
   dispersionMultiplier: number;
+  /** Direct, shrunk coverage corrections when historical upper quantiles exist. */
+  quantileMultipliers: {
+    p50: number;
+    p80: number;
+    p95: number;
+  };
   sampleCount: number;
   matchedSampleCount: number;
+  /** Similarity-weighted evidence after each run is counted exactly once. */
+  effectiveSampleCount: number;
+  /** Implausible stop boundaries are retained in history but excluded from learning. */
+  excludedSampleCount: number;
   level: CalibrationLevel;
   applied: boolean;
   /** Fixed safety bounds used after robust outlier handling and shrinkage. */
@@ -154,13 +167,20 @@ export interface EstimateConfidence {
   reason: string;
 }
 
+export interface EstimateDriver {
+  label: string;
+  detail: string;
+  /** Signed marginal change to the staged center versus a neutral counterfactual. */
+  impactMinutes?: number;
+}
+
 export interface EstimateResult {
   minutes: DurationQuantiles;
   formatted: FormattedDurationQuantiles;
   stages: readonly StageEstimate[];
   analysis: PromptAnalysis;
   confidence: EstimateConfidence;
-  drivers: readonly string[];
+  drivers: readonly EstimateDriver[];
   assumptions: readonly string[];
   calibration: CalibrationResult;
   /** Resolved numeric seed. It is never derived from the prompt. */

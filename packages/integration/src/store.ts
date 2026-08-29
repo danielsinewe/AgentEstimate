@@ -12,7 +12,7 @@ import type {
   StoredEstimate,
   StoredRunFeatures,
 } from './types.js';
-import type { CalibrationSample } from '@agent-eta/core';
+import { calibrate, type CalibrationSample } from '@agent-eta/core';
 
 const SCHEMA_VERSION = 1 as const;
 const HISTORY_FILENAME = 'runs.jsonl';
@@ -585,6 +585,19 @@ export class CalibrationStore {
         entry.elapsedMs !== undefined && entry.outcome !== undefined,
     );
     const successful = completed.filter((entry) => entry.outcome === 'success');
+    const calibrationSamples: CalibrationSample[] = successful.map((entry) => ({
+      estimatedMinutes: entry.estimate.minutes.p50,
+      estimatedP80Minutes: entry.estimate.minutes.p80,
+      estimatedP95Minutes: entry.estimate.minutes.p95,
+      actualMinutes: entry.elapsedMs / 60_000,
+      taskClass: entry.features.prompt.taskClass,
+      provider: entry.features.provider,
+      model: entry.features.model,
+      effort: entry.features.effort,
+      speed: entry.features.speed,
+    }));
+    const learningEvidence = calibrate(calibrationSamples, {});
+    const eligibleCalibrationRuns = successful.length - learningEvidence.excludedSampleCount;
     const actualMinutes = successful.map((entry) => positiveFinite(entry.elapsedMs / 60_000));
     const absoluteErrors = successful.map((entry) => Math.abs(entry.elapsedMs / 60_000 - entry.estimate.minutes.p50));
     const coverage = (quantile: 'p50' | 'p80'): number | null => {
@@ -594,10 +607,12 @@ export class CalibrationStore {
     };
 
     return {
-      state: successful.length >= 20 ? 'personalized' : successful.length >= 3 ? 'learning' : 'cold-start',
+      state: eligibleCalibrationRuns >= 20 ? 'personalized' : eligibleCalibrationRuns >= 3 ? 'learning' : 'cold-start',
       startedRuns: history.length,
       completedRuns: completed.length,
       successfulRuns: successful.length,
+      eligibleCalibrationRuns,
+      excludedCalibrationRuns: learningEvidence.excludedSampleCount,
       failedRuns: completed.filter((entry) => entry.outcome === 'failed').length,
       censoredRuns: completed.filter((entry) => entry.outcome === 'censored').length,
       medianActualMinutes: round(median(actualMinutes)),
@@ -617,6 +632,8 @@ export class CalibrationStore {
       .slice(0, Math.max(0, limit))
       .map((entry) => ({
         estimatedMinutes: entry.estimate.minutes.p50,
+        estimatedP80Minutes: entry.estimate.minutes.p80,
+        estimatedP95Minutes: entry.estimate.minutes.p95,
         actualMinutes: entry.elapsedMs / 60_000,
         taskClass: entry.features.prompt.taskClass,
         provider: entry.features.provider,

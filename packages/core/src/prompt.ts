@@ -6,7 +6,7 @@ import type {
 } from './types.js';
 
 const ACTION_PATTERN =
-  /\b(add|audit|build|change|check|clean|convert|create|debug|delete|deploy|design|diagnose|document|estimate|explain|fix|implement|integrate|investigate|migrate|optimize|publish|refactor|release|remove|repair|research|review|ship|test|update|verify|write)\b/gi;
+  /\b(add|audit|build|change|check|clean|convert|create|debug|delete|deploy|design|diagnose|document|enhance|estimate|explain|fix|implement|improve|integrate|investigate|migrate|optimize|publish|refactor|release|remove|rename|repair|research|review|ship|test|update|verify|write)\b/gi;
 
 const FILE_PATTERN =
   /(?:^|\s)(?:[\w@.-]+\/)+[\w@.-]+|\b[\w-]+\.(?:c|cc|cpp|css|go|html|java|js|json|jsx|kt|md|php|py|rb|rs|sql|swift|toml|ts|tsx|vue|yaml|yml)\b/gi;
@@ -48,7 +48,7 @@ const CLASS_RULES: ReadonlyArray<{
   },
   {
     taskClass: 'feature',
-    pattern: /\b(build|create|implement|integrate|add|design|make an? (?:app|tool|page|feature))\b/i,
+    pattern: /\b(build|create|implement|integrate|add|design|enhance|improve|make an? (?:app|tool|page|feature))\b/i,
     weight: 3,
   },
   {
@@ -67,6 +67,13 @@ const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(maximum, Math.max(minimum, value));
 
 const classifyTask = (prompt: string): TaskClass => {
+  if (
+    /^(?:please\s+)?(?:answer|output|print|reply|respond|return|say)\b/i.test(prompt.trim()) &&
+    /\b(?:do not use tools|no tools|only)\b/i.test(prompt)
+  ) {
+    return 'question';
+  }
+
   let best: { taskClass: TaskClass; score: number } = {
     taskClass: prompt.trim().endsWith('?') ? 'question' : 'feature',
     score: 0,
@@ -121,14 +128,24 @@ export const analyzePrompt = (prompt: string): PromptAnalysis => {
   ) {
     scopeScore += 2;
   }
-  if (/\b(single|one|only|just)\s+(?:file|line|typo|function|component)\b/i.test(normalized)) {
-    scopeScore -= 1;
+  if (
+    /\b(?:impress me|make (?:the |this )?(?:app|product|site|system|codebase) better|improve (?:the |this )?(?:app|product|site|system|codebase)(?:\s|$))\b/i.test(
+      normalized,
+    )
+  ) {
+    scopeScore += 3;
+  }
+  if (/\b(?:single|one|only|just)\s+(?:file|line|typo|function|component)\b/i.test(normalized)) {
+    scopeScore -= 2;
+  }
+  if (/\b(?:typo|one[- ]line|copy change|text change)\b/i.test(normalized)) {
+    scopeScore -= 2;
   }
   scopeScore = clamp(scopeScore, 0, 5);
 
   let ambiguityScore = normalized.length === 0 ? 0.9 : 0.34;
   if (
-    /\b(whatever|somehow|i don'?t know|make it better|improve it|perfect|best possible|as needed|etc\.?|something|doesn'?t work)\b/i.test(
+    /\b(whatever|somehow|i don'?t know|figure it out|impress me|make (?:it|.+) better|improve it|perfect|best possible|as needed|etc\.?|something|doesn'?t work)\b/i.test(
       normalized,
     )
   ) {
@@ -143,12 +160,18 @@ export const analyzePrompt = (prompt: string): PromptAnalysis => {
   if (/```|\btests? (?:must|should|expect)|\bexpected (?:result|output|behavior)\b/i.test(normalized)) {
     ambiguityScore -= 0.12;
   }
+  if (
+    /^(?:please\s+)?(?:answer|output|print|reply|respond|return|say)\b/i.test(normalized) &&
+    /\b(?:do not use tools|no tools|only)\b/i.test(normalized)
+  ) {
+    ambiguityScore = Math.min(ambiguityScore, 0.12);
+  }
   ambiguityScore = clamp(ambiguityScore, 0.08, 0.95);
 
   const signals = {
     external:
       taskClass === 'research' ||
-      /\b(api|external|third[- ]party|internet|web search|documentation|docs|oauth|integration|connector|scrape|provider)\b/i.test(
+      /\b(api|auth(?:entication)?|external|google sign[- ]in|oauth|payment|provider|sign[- ]in provider|stripe|third[- ]party|internet|web search|documentation|docs|integration|connector|scrape|webhook)\b/i.test(
         normalized,
       ),
     tests:

@@ -100,6 +100,8 @@ export interface CalibrationStatus {
   startedRuns: number;
   completedRuns: number;
   successfulRuns: number;
+  eligibleCalibrationRuns: number;
+  excludedCalibrationRuns: number;
   failedRuns: number;
   censoredRuns: number;
   medianActualMinutes: number | null;

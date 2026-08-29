@@ -35,6 +35,8 @@ interface WebCalibrationSample {
   speed: SpeedMode;
   taskClass: TaskClass;
   estimatedMinutes: number;
+  estimatedP80Minutes?: number;
+  estimatedP95Minutes?: number;
   actualMinutes: number;
   successful: boolean;
   createdAt: string;
@@ -322,6 +324,8 @@ function App() {
       speed,
       taskClass: forecast.analysis.taskClass as TaskClass,
       estimatedMinutes: forecast.quantiles.p50,
+      estimatedP80Minutes: forecast.quantiles.p80,
+      estimatedP95Minutes: forecast.quantiles.p95,
       actualMinutes: actual,
       successful: true,
       createdAt: new Date().toISOString(),

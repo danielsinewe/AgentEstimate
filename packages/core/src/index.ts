@@ -11,6 +11,7 @@ export type {
   DurationQuantiles,
   Effort,
   EstimateConfidence,
+  EstimateDriver,
   EstimateInput,
   EstimateResult,
   FormattedDurationQuantiles,

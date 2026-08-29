@@ -4,6 +4,7 @@ import type {
   AmbiguityLevel,
   DurationQuantiles,
   Effort,
+  EstimateDriver,
   EstimateInput,
   EstimateResult,
   PromptAnalysis,
@@ -35,7 +36,7 @@ const STAGES: readonly StageDefinition[] = [
 ];
 
 const BASE_MINUTES: Record<TaskClass, Record<StageName, number>> = {
-  question: { orient: 1.5, reason: 5, change: 0.5, verify: 1, deliver: 1 },
+  question: { orient: 1, reason: 2, change: 0.2, verify: 0.4, deliver: 0.5 },
   research: { orient: 3, reason: 14, change: 1, verify: 3, deliver: 2 },
   review: { orient: 4, reason: 10, change: 1, verify: 6, deliver: 2 },
   diagnose: { orient: 5, reason: 13, change: 3, verify: 5, deliver: 2 },
@@ -46,11 +47,11 @@ const BASE_MINUTES: Record<TaskClass, Record<StageName, number>> = {
 };
 
 const SCOPE_FACTORS: Record<ScopeLevel, number> = {
-  micro: 0.5,
-  small: 0.76,
+  micro: 0.24,
+  small: 0.62,
   medium: 1,
-  large: 1.55,
-  project: 2.35,
+  large: 1.65,
+  project: 2.6,
 };
 
 const SCOPE_STAGE_WEIGHTS: Record<StageName, number> = {
@@ -108,6 +109,14 @@ const SIGNAL_ADDITIONS: Record<
   browser: { orient: 1, reason: 0.5, change: 3, verify: 5, deliver: 0.5 },
   deploy: { orient: 0.5, reason: 0.5, change: 1.5, verify: 5, deliver: 8 },
   destructive: { orient: 1, reason: 2, change: 1, verify: 4, deliver: 1 },
+};
+
+const LOOP_INTERACTION_ADDITIONS: Record<StageName, number> = {
+  orient: 0.25,
+  reason: 0.75,
+  change: 1.5,
+  verify: 2,
+  deliver: 0.8,
 };
 
 const DEFAULT_SEED = 0x41_45_54_41; // "AETA"; intentionally independent of prompt text.
@@ -280,6 +289,13 @@ const stageCenters = (
     codex: { orient: 0.96, reason: 1, change: 0.95, verify: 0.98, deliver: 1 },
     claude: { orient: 1, reason: 0.97, change: 1, verify: 1, deliver: 0.98 },
   };
+  const operationalLoopCount = [
+    analysis.signals.external,
+    analysis.signals.tests,
+    analysis.signals.browser,
+    analysis.signals.deploy,
+  ].filter(Boolean).length;
+  const loopPairs = Math.max(0, (operationalLoopCount * (operationalLoopCount - 1)) / 2);
 
   const centers = {} as Record<StageName, number>;
   const drivers = {} as Record<StageName, string[]>;
@@ -325,6 +341,11 @@ const stageCenters = (
       if (SIGNAL_ADDITIONS[signal][stage] >= 1) stageDrivers.push(signal);
     }
 
+    if (loopPairs > 0) {
+      minutes += LOOP_INTERACTION_ADDITIONS[stage] * loopPairs;
+      if (LOOP_INTERACTION_ADDITIONS[stage] * loopPairs >= 1) stageDrivers.push('feedback-loop interaction');
+    }
+
     minutes *= calibrationMultiplier;
     if (Math.abs(calibrationMultiplier - 1) >= 0.005) stageDrivers.push('personal calibration');
     centers[stage] = Math.max(0.2, minutes);
@@ -340,6 +361,136 @@ const simulationSigma = (analysis: PromptAnalysis, dispersionMultiplier: number)
   if (analysis.signals.external) sigma += 0.06;
   if (analysis.taskClass === 'research' || analysis.taskClass === 'diagnose') sigma += 0.035;
   return sigma * dispersionMultiplier;
+};
+
+const surpriseProbability = (analysis: PromptAnalysis): number => {
+  const ambiguityBase: Record<AmbiguityLevel, number> = { low: 0.045, medium: 0.13, high: 0.24 };
+  let probability = ambiguityBase[analysis.ambiguity];
+  if (analysis.signals.external) probability += 0.07;
+  if (analysis.signals.deploy) probability += 0.04;
+  if (analysis.signals.destructive) probability += 0.035;
+  if (analysis.taskClass === 'diagnose') probability += 0.035;
+  if (analysis.taskClass === 'migration') probability += 0.045;
+  return clamp(probability, 0.04, 0.42);
+};
+
+const SURPRISE_STAGE_WEIGHTS: Record<StageName, number> = {
+  orient: 0.45,
+  reason: 0.9,
+  change: 1,
+  verify: 1.15,
+  deliver: 0.35,
+};
+
+const adjustedQuantiles = (
+  minutes: DurationQuantiles,
+  calibration: EstimateResult['calibration'],
+): DurationQuantiles => {
+  const centerMultiplier = Math.max(0.01, calibration.quantileMultipliers.p50);
+  const p80 = Math.max(
+    minutes.p50,
+    roundMinute(minutes.p80 * calibration.quantileMultipliers.p80 / centerMultiplier),
+  );
+  const p95 = Math.max(
+    p80,
+    roundMinute(minutes.p95 * calibration.quantileMultipliers.p95 / centerMultiplier),
+  );
+  return { ...minutes, p80, p95 };
+};
+
+const totalCenter = (
+  input: EstimateInput,
+  analysis: PromptAnalysis,
+  calibrationMultiplier: number,
+): number => Object.values(stageCenters(input, analysis, calibrationMultiplier).centers)
+  .reduce((sum, value) => sum + value, 0);
+
+const rankedDrivers = (
+  input: EstimateInput,
+  analysis: PromptAnalysis,
+  centers: Record<StageName, number>,
+  calibration: EstimateResult['calibration'],
+): EstimateDriver[] => {
+  const current = Object.values(centers).reduce((sum, value) => sum + value, 0);
+  const drivers: EstimateDriver[] = [];
+  const addImpact = (label: string, detail: string, counterfactual: number): void => {
+    const impactMinutes = roundMinute(current - counterfactual);
+    if (Math.abs(impactMinutes) < 0.5) return;
+    drivers.push({ label, detail, impactMinutes });
+  };
+
+  if (analysis.scope !== 'medium') {
+    addImpact(
+      `${analysis.scope} scope`,
+      'Change surface versus a medium task',
+      totalCenter(input, { ...analysis, scope: 'medium' }, calibration.multiplier),
+    );
+  }
+  if (analysis.ambiguity !== 'medium') {
+    addImpact(
+      `${analysis.ambiguity} ambiguity`,
+      analysis.ambiguity === 'high' ? 'Unknowns also widen the tail' : 'Clearer constraints reduce rework',
+      totalCenter(input, { ...analysis, ambiguity: 'medium', ambiguityScore: 0.5 }, calibration.multiplier),
+    );
+  }
+
+  const signalLabels: Record<keyof PromptAnalysis['signals'], [string, string]> = {
+    external: ['external dependency', 'Network and service feedback'],
+    tests: ['test verification', 'Automated validation loop'],
+    browser: ['browser verification', 'Rendered-flow validation'],
+    deploy: ['production deployment', 'Build, release, and readback'],
+    destructive: ['safety safeguards', 'Extra checks before mutation'],
+  };
+  for (const signal of Object.keys(signalLabels) as Array<keyof PromptAnalysis['signals']>) {
+    if (!analysis.signals[signal]) continue;
+    const [label, detail] = signalLabels[signal];
+    addImpact(
+      label,
+      detail,
+      totalCenter(
+        input,
+        { ...analysis, signals: { ...analysis.signals, [signal]: false } },
+        calibration.multiplier,
+      ),
+    );
+  }
+
+  if (input.effort !== 'medium') {
+    addImpact(
+      `${input.effort} reasoning effort`,
+      'Deliberation versus medium effort',
+      totalCenter({ ...input, effort: 'medium' }, analysis, calibration.multiplier),
+    );
+  }
+  if (input.speed === 'fast') {
+    addImpact(
+      'fast mode',
+      'Only model-bound stages accelerate',
+      totalCenter({ ...input, speed: 'standard' }, analysis, calibration.multiplier),
+    );
+  }
+  if (input.repo && repoPrior(input.repo) > 1.01) {
+    const { repo: _repo, ...withoutRepo } = input;
+    addImpact(
+      'repository shape',
+      'Weak orientation prior, not task complexity',
+      totalCenter(withoutRepo, analysis, calibration.multiplier),
+    );
+  }
+  if (Math.abs(calibration.multiplier - 1) >= 0.005) {
+    addImpact(
+      'personal history',
+      `${calibration.effectiveSampleCount} effective similar runs`,
+      totalCenter(input, analysis, 1),
+    );
+  }
+
+  drivers.sort((first, second) => Math.abs(second.impactMinutes ?? 0) - Math.abs(first.impactMinutes ?? 0));
+  drivers.push({
+    label: `${analysis.taskClass} reference class`,
+    detail: 'Stage pattern for this kind of task',
+  });
+  return drivers;
 };
 
 const confidenceFor = (
@@ -404,6 +555,7 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
   const resolvedSeed = hashSeed(input.seed);
   const random = createRandom(resolvedSeed);
   const sigma = simulationSigma(analysis, calibration.dispersionMultiplier);
+  const tailProbability = surpriseProbability(analysis);
   const valuesByStage: Record<StageName, number[]> = {
     orient: [],
     reason: [],
@@ -415,6 +567,8 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
 
   for (let simulation = 0; simulation < SIMULATION_COUNT; simulation += 1) {
     const sharedShock = normal(random);
+    const surprise = random() < tailProbability;
+    const surpriseMagnitude = surprise ? 0.22 + Math.abs(normal(random)) * 0.34 : 0;
     let total = 0;
     for (const definition of STAGES) {
       const stageShock = normal(random);
@@ -422,14 +576,16 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
         sigma *
         (definition.stage === 'reason' ? 1.08 : definition.stage === 'deliver' ? 0.82 : 1);
       const combinedShock = sharedShock * 0.48 + stageShock * 0.877;
-      const sampled = centers[definition.stage] * Math.exp(combinedShock * stageSigma);
+      const sampled = centers[definition.stage] *
+        Math.exp(combinedShock * stageSigma) *
+        (1 + surpriseMagnitude * SURPRISE_STAGE_WEIGHTS[definition.stage]);
       valuesByStage[definition.stage].push(sampled);
       total += sampled;
     }
     totals.push(total);
   }
 
-  const minutes = summarize(totals);
+  const minutes = adjustedQuantiles(summarize(totals), calibration);
   const stages: StageEstimate[] = STAGES.map((definition) => {
     const stageMinutes = summarize(valuesByStage[definition.stage]);
     return {
@@ -440,16 +596,7 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
     };
   });
 
-  const prior = repoPrior(input.repo);
-  const drivers = [...analysis.drivers];
-  if (prior > 1.01) drivers.push(`repository prior +${Math.round((prior - 1) * 100)}% at orientation`);
-  if (input.speed === 'fast') drivers.push('fast mode on model-bound stages only');
-  if (Math.abs(calibration.multiplier - 1) >= 0.005) {
-    drivers.push(`personal center calibration ×${calibration.multiplier}`);
-  }
-  if (Math.abs(calibration.dispersionMultiplier - 1) >= 0.025) {
-    drivers.push(`personal interval width ×${calibration.dispersionMultiplier}`);
-  }
+  const drivers = rankedDrivers(input, analysis, centers, calibration);
 
   const assumptions: string[] = [];
   if (!input.repo || Object.values(input.repo).every((value) => !safeMetric(value))) {
@@ -458,6 +605,9 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
   if (!analysis.signals.tests) assumptions.push('No explicit test run included.');
   if (!analysis.signals.deploy) assumptions.push('No production deployment included.');
   if (!calibration.applied) assumptions.push('No material personal calibration available.');
+  if (calibration.excludedSampleCount > 0) {
+    assumptions.push(`${calibration.excludedSampleCount} implausible stop ${calibration.excludedSampleCount === 1 ? 'boundary was' : 'boundaries were'} excluded from learning.`);
+  }
 
   return {
     minutes,
@@ -470,7 +620,7 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
     },
     stages,
     analysis,
-    confidence: confidenceFor(analysis, minutes, calibration.sampleCount),
+    confidence: confidenceFor(analysis, minutes, Math.floor(calibration.effectiveSampleCount)),
     drivers,
     assumptions,
     calibration,
