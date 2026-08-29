@@ -1,12 +1,12 @@
 {
-  "description": "Estimate at prompt submission and calibrate after each turn without storing prompt or tool content.",
+  "description": "Estimate at prompt submission, surface failures, and calibrate after each turn without storing prompt or tool content.",
   "hooks": {
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'dist','hook.mjs')).href).then(m=>m.runHookProcess()).catch(()=>process.stdout.write('{}\\\\n'))\"",
+            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'scripts','hook-launcher.mjs')).href).then(m=>m.runHookLauncherProcess()).catch(()=>{process.stderr.write('Agent ETA hook launcher failed\\\\n');process.exitCode=1})\"",
             "timeout": 5
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'dist','hook.mjs')).href).then(m=>m.runHookProcess()).catch(()=>process.stdout.write('{}\\\\n'))\"",
+            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'scripts','hook-launcher.mjs')).href).then(m=>m.runHookLauncherProcess()).catch(()=>{process.stderr.write('Agent ETA hook launcher failed\\\\n');process.exitCode=1})\"",
             "timeout": 3
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'dist','hook.mjs')).href).then(m=>m.runHookProcess()).catch(()=>process.stdout.write('{}\\\\n'))\"",
+            "command": "node -e \"const p=require('node:path'),u=require('node:url'),r=process.env.CODEX_PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(!r)throw new Error('Agent ETA plugin root is unavailable');import(u.pathToFileURL(p.join(r,'scripts','hook-launcher.mjs')).href).then(m=>m.runHookLauncherProcess()).catch(()=>{process.stderr.write('Agent ETA hook launcher failed\\\\n');process.exitCode=1})\"",
             "timeout": 3
           }
         ]

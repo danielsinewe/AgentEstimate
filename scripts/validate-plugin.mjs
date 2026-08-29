@@ -40,8 +40,9 @@ const supportedHooks = ['UserPromptSubmit', 'Stop', 'SessionEnd'];
 assert(Object.keys(hooks.hooks ?? {}).every((name) => supportedHooks.includes(name)), 'Unsupported hook event');
 for (const name of supportedHooks) {
   const command = hooks.hooks?.[name]?.[0]?.hooks?.[0]?.command;
-  assert(typeof command === 'string' && command.includes("dist','hook.mjs"), `${name} hook launcher is missing`);
+  assert(typeof command === 'string' && command.includes("scripts','hook-launcher.mjs"), `${name} hook launcher is missing`);
   assert(command.includes('CODEX_PLUGIN_ROOT') && command.includes('CLAUDE_PLUGIN_ROOT'), `${name} hook is not portable`);
+  assert(!command.includes("process.stdout.write('{}"), `${name} hook launcher must not hide failures`);
 }
 
 const server = mcp.mcpServers?.['agent-eta'];
@@ -55,6 +56,6 @@ assert(/^---\n[\s\S]*?\n---\n/u.test(skill), 'Skill frontmatter is invalid');
 assert(/^name:\s*estimate$/mu.test(skill), 'Skill name is invalid');
 assert(/^description:\s*\S.+$/mu.test(skill), 'Skill description is missing');
 
-for (const runtime of ['dist/cli.mjs', 'dist/hook.mjs', 'dist/mcp.mjs']) await exists(runtime);
+for (const runtime of ['dist/cli.mjs', 'dist/hook.mjs', 'dist/mcp.mjs', 'scripts/hook-launcher.mjs']) await exists(runtime);
 
 process.stdout.write(`Plugin validation passed: ${root}\n`);

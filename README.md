@@ -100,7 +100,7 @@ The server exposes three read-only tools:
 
 MCP is excellent for asking for an estimate. Hooks are what make run capture automatic; an agent can otherwise choose not to call an MCP tool.
 
-### Claude Code plugin
+### Plugin + hooks
 
 The build copies the runtime into the self-contained plugin bundle. Load it for a local session with:
 
@@ -108,7 +108,18 @@ The build copies the runtime into the self-contained plugin bundle. Load it for 
 claude --plugin-dir "$PWD/plugins/agent-eta"
 ```
 
-Then ask, for example, “Estimate this task before I start.” The bundled skill, MCP server, and lifecycle hooks work together: the prompt-submit hook computes a likely duration and safer planning time, then gives the agent a privacy-safe developer instruction to show that exact line before any other reply or tool call. The UI warning remains as a fallback, and completion hooks record the elapsed outcome for local calibration.
+Then send any prompt. The bundled skill, MCP server, and lifecycle hooks work together: the prompt-submit hook computes a likely duration and safer planning time, then gives the agent a privacy-safe developer instruction to show that exact line before any other reply or tool call. If estimation fails, Agent ETA says so visibly and lets the prompt continue. Completion hooks record elapsed outcomes for local calibration.
+
+After installing or updating the plugin, start a new session, open `/hooks`, and trust the reviewed Agent ETA hooks. Codex records trust against the exact hook version, so updates require one fresh review. Then send `Reply only OK`; the first line should begin with `Agent ETA · likely`. That canary verifies the plugin, hook, and first-response behavior together. If it only says `OK`, the hook is not active. `AGENTS.md`, `CLAUDE.md`, memory, skills, and MCP alone cannot provide the same lifecycle guarantee.
+
+For workflows that must never start without a forecast, launch Codex or Claude Code with strict mode enabled:
+
+```bash
+AGENT_ETA_STRICT=1 codex
+AGENT_ETA_STRICT=1 claude
+```
+
+Strict mode blocks only when Agent ETA cannot calculate a forecast. Normal mode remains fail-visible and continues the prompt.
 
 The bundle also contains a Codex plugin manifest for personal or team marketplaces. This repository intentionally remains an application repository rather than a marketplace registry; the manual MCP setup above is the checkout-agnostic Codex path.
 
@@ -157,7 +168,7 @@ Raw prompts are processed in memory and are not copied into Agent ETA history. S
 
 The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. The CLI/plugin store defaults to `~/.agent-eta/runs.jsonl`, or `$XDG_DATA_HOME/agent-eta/runs.jsonl` when configured. Codex/Claude plugin data directories override that location; an explicit `AGENT_ETA_DATA_DIR` takes highest priority. On supported systems the directory is created with mode `0700` and the files with mode `0600`.
 
-Hook payloads do not consistently expose the active model, effort, or speed setting. Agent ETA uses any values the host supplies and labels every fallback assumption in the forecast message. For exact passive forecasts, set `AGENT_ETA_MODEL`, `AGENT_ETA_EFFORT`, and `AGENT_ETA_SPEED` (`standard` or `fast`) in the environment that launches Codex or Claude Code; `AGENT_ETA_PROVIDER` can be set to `codex` or `claude` when host detection is unavailable.
+Hook payloads do not consistently expose the active model, effort, or speed setting. Agent ETA uses any values the host supplies and labels every fallback assumption in the forecast message. For exact passive forecasts, set `AGENT_ETA_MODEL`, `AGENT_ETA_EFFORT`, and `AGENT_ETA_SPEED` (`standard` or `fast`) in the environment that launches Codex or Claude Code; `AGENT_ETA_PROVIDER` can be set to `codex` or `claude` when host detection is unavailable. `AGENT_ETA_STRICT=1` blocks a prompt only when no forecast can be produced.
 
 There is no product telemetry in the estimator, core engine, CLI, hooks, or MCP server.
 

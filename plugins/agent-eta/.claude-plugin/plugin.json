@@ -1,7 +1,7 @@
 {
   "name": "agent-eta",
   "version": "0.1.0",
-  "description": "Local, privacy-first P50 and P80 time forecasts for coding-agent tasks.",
+  "description": "Automatic, privacy-first time forecasts for coding-agent tasks.",
   "author": {
     "name": "Daniel Sinewe",
     "url": "https://github.com/danielsinewe"

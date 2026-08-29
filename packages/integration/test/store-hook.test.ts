@@ -272,7 +272,7 @@ describe('CalibrationStore', () => {
   });
 });
 
-describe('hook lifecycle and fail-open privacy', () => {
+describe('hook lifecycle, visible failures, and privacy', () => {
   it('forecasts on submit, persists only derived metadata, and completes the same session', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'agent-eta-hook-'));
     const cwd = await mkdtemp(join(tmpdir(), 'agent-eta-hook-repo-'));
@@ -396,13 +396,52 @@ describe('hook lifecycle and fail-open privacy', () => {
     expect((await new CalibrationStore({ dataDir }).history())[0]?.outcome).toBe(outcome);
   });
 
-  it('returns empty output for malformed, unsupported, oversized, or incomplete events', async () => {
+  it('returns empty output for malformed, unsupported, or oversized events', async () => {
     expect(await handleHookInvocation('not json')).toEqual({});
     expect(await handleHookInvocation('[]')).toEqual({});
     expect(await handleHookInvocation(JSON.stringify({ hook_event_name: 'ToolUse' }))).toEqual({});
-    expect(await handleHookInvocation(JSON.stringify({ hook_event_name: 'UserPromptSubmit' }))).toEqual({});
     expect(await handleHookInvocation(' '.repeat(2 * 1024 * 1024 + 1))).toEqual({});
     expect(await readHookStdin(Readable.from(['x'.repeat(2 * 1024 * 1024 + 1)]))).toBe('');
+  });
+
+  it('makes missing or failed submit estimates visible without exposing error details', async () => {
+    const missing = await handleHookInvocation(JSON.stringify({ hook_event_name: 'UserPromptSubmit' }));
+    expect(missing).toEqual({
+      systemMessage: 'Agent ETA unavailable · prompt will continue',
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: expect.stringContaining(
+          'Agent ETA unavailable · prompt will continue\nBefore any other commentary, answer, or tool call',
+        ),
+      },
+    });
+
+    const failedInput = {
+      hook_event_name: 'UserPromptSubmit',
+      get prompt(): string {
+        throw new Error('PRIVATE ESTIMATOR FAILURE DETAIL');
+      },
+    };
+    const failed = await handleHookObject(failedInput);
+    expect(failed.systemMessage).toBe('Agent ETA unavailable · prompt will continue');
+    expect(JSON.stringify(failed)).not.toContain('PRIVATE ESTIMATOR FAILURE DETAIL');
+  });
+
+  it('blocks submit failures only when strict mode is explicitly enabled', async () => {
+    const failedInput = {
+      hook_event_name: 'UserPromptSubmit',
+      get prompt(): string {
+        throw new Error('failure');
+      },
+    };
+    const result = await handleHookObject(failedInput, {
+      environment: { AGENT_ETA_STRICT: '1' },
+    });
+    expect(result).toEqual({
+      decision: 'block',
+      reason: 'Agent ETA strict mode requires a forecast before this prompt can run. Set AGENT_ETA_STRICT=0 to continue without one.',
+      systemMessage: 'Agent ETA unavailable · prompt blocked by strict mode',
+    });
   });
 
   it('still returns an estimate when persistence is unavailable', async () => {

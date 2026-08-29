@@ -127,6 +127,8 @@ export interface HookInput {
 }
 
 export interface HookOutput {
+  decision?: 'block';
+  reason?: string;
   systemMessage?: string;
   hookSpecificOutput?: {
     hookEventName: 'UserPromptSubmit';

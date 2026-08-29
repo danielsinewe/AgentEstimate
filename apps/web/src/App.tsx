@@ -625,7 +625,7 @@ function App() {
           <div className="install-copy">
             <span className="section-number section-number-light">03</span>
             <h2 id="install-title">Make it<br /><em>automatic.</em></h2>
-            <p>One local plugin. Passive forecasts in Codex and Claude Code. MCP tools when you want to ask why.</p>
+            <p>One local plugin. A forecast before every supported prompt. No memory trick required.</p>
             <a className="install-link" href="https://github.com/danielsinewe/AgentEstimate#quick-start" target="_blank" rel="noreferrer">
               Open setup guide <ArrowUpRight size={16} />
             </a>
@@ -633,7 +633,7 @@ function App() {
           <div className="install-stack">
             <article>
               <div className="install-icon"><Sparkles size={19} /></div>
-              <div><span>Codex plugin</span><strong>ETA on prompt submit</strong></div>
+              <div><span>Codex plugin</span><strong>Review once, ETA every prompt</strong></div>
               <Check size={18} />
             </article>
             <article>
@@ -644,6 +644,11 @@ function App() {
             <article>
               <div className="install-icon"><Terminal size={19} /></div>
               <div><span>MCP server</span><strong>Estimate and explain on demand</strong></div>
+              <Check size={18} />
+            </article>
+            <article>
+              <div className="install-icon"><LockKeyhole size={19} /></div>
+              <div><span>Optional strict mode</span><strong>No ETA, no prompt submission</strong></div>
               <Check size={18} />
             </article>
             <button

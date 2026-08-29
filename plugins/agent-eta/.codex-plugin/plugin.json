@@ -1,7 +1,7 @@
 {
   "name": "agent-eta",
-  "version": "0.1.0+codex.20260829061352",
-  "description": "Local, privacy-first time forecasts for Codex and Claude Code tasks.",
+  "version": "0.1.0+codex.20260829063621",
+  "description": "Automatic, privacy-first time forecasts for Codex and Claude Code tasks.",
   "author": {
     "name": "Daniel Sinewe",
     "url": "https://github.com/danielsinewe"
@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Agent ETA",
     "shortDescription": "Know when your coding agent will finish.",
-    "longDescription": "Private, local P50 and P80 time forecasts that learn from completed Codex and Claude Code runs.",
+    "longDescription": "Private, local likely-time and safer-plan forecasts that appear before every supported Codex and Claude Code run.",
     "developerName": "Daniel Sinewe",
     "category": "Productivity",
     "capabilities": [

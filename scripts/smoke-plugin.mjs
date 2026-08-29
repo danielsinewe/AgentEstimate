@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +20,7 @@ function commandFor(eventName) {
   return command;
 }
 
-function runCommand(command, input) {
+function runCommand(command, input, environment = {}) {
   return new Promise((resolvePromise, reject) => {
     const started = performance.now();
     const child = spawn(command, {
@@ -29,6 +29,8 @@ function runCommand(command, input) {
         ...process.env,
         CODEX_PLUGIN_ROOT: pluginRoot,
         AGENT_ETA_DATA_DIR: dataDir,
+        AGENT_ETA_STRICT: '0',
+        ...environment,
       },
       shell: true,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -82,6 +84,43 @@ if (submitOutput.hookSpecificOutput.additionalContext.includes(privatePromptMark
   throw new Error('Prompt-submit hook exposed private input in model-visible context');
 }
 
+const unavailable = JSON.parse((await runCommand(commandFor('UserPromptSubmit'), {
+  hook_event_name: 'UserPromptSubmit',
+  session_id: 'smoke-unavailable-session',
+})).stdout);
+if (
+  unavailable.systemMessage !== 'Agent ETA unavailable · prompt will continue'
+  || unavailable.hookSpecificOutput?.hookEventName !== 'UserPromptSubmit'
+) {
+  throw new Error('Prompt-submit hook did not make an unavailable ETA visible');
+}
+
+const strict = JSON.parse((await runCommand(commandFor('UserPromptSubmit'), {
+  hook_event_name: 'UserPromptSubmit',
+  session_id: 'smoke-strict-session',
+}, { AGENT_ETA_STRICT: '1' })).stdout);
+if (
+  strict.decision !== 'block'
+  || strict.systemMessage !== 'Agent ETA unavailable · prompt blocked by strict mode'
+) {
+  throw new Error('Prompt-submit hook did not enforce strict mode');
+}
+
+const brokenPluginRoot = await mkdtemp(join(tmpdir(), 'agent-eta-broken-plugin-'));
+await mkdir(join(brokenPluginRoot, 'scripts'));
+await copyFile(
+  join(pluginRoot, 'scripts', 'hook-launcher.mjs'),
+  join(brokenPluginRoot, 'scripts', 'hook-launcher.mjs'),
+);
+const launcherFallback = JSON.parse((await runCommand(commandFor('UserPromptSubmit'), {
+  hook_event_name: 'UserPromptSubmit',
+  session_id: 'smoke-launcher-fallback-session',
+  prompt: 'This runtime is intentionally unavailable.',
+}, { CODEX_PLUGIN_ROOT: brokenPluginRoot })).stdout);
+if (launcherFallback.systemMessage !== 'Agent ETA unavailable · prompt will continue') {
+  throw new Error('Hook launcher hid an unavailable plugin runtime');
+}
+
 const completed = await runCommand(commandFor('Stop'), {
   hook_event_name: 'Stop',
   session_id: sessionId,
@@ -126,6 +165,9 @@ process.stdout.write(`${JSON.stringify({
   completionHookMs: completed.elapsedMs,
   systemMessage: submitOutput.systemMessage,
   firstResponseInstruction: true,
+  unavailableVisible: true,
+  strictModeBlocks: true,
+  brokenRuntimeVisible: true,
   persistedRecords: records.length,
   rawInputPersisted: false,
   mcpTools,

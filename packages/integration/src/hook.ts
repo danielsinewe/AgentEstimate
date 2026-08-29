@@ -15,6 +15,9 @@ import { CalibrationStore } from './store.js';
 import type { AgentProvider, HookInput, HookOutput, RepositoryProfile } from './types.js';
 
 const MAX_HOOK_INPUT_BYTES = 2 * 1024 * 1024;
+const ETA_UNAVAILABLE_MESSAGE = 'Agent ETA unavailable · prompt will continue';
+const ETA_STRICT_MESSAGE = 'Agent ETA unavailable · prompt blocked by strict mode';
+const ETA_STRICT_REASON = 'Agent ETA strict mode requires a forecast before this prompt can run. Set AGENT_ETA_STRICT=0 to continue without one.';
 
 export interface HookInvocationOptions {
   provider?: AgentProvider;
@@ -25,6 +28,37 @@ export interface HookInvocationOptions {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function strictModeEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+  try {
+    return /^(?:1|true|yes|on)$/iu.test(environment.AGENT_ETA_STRICT?.trim() ?? '');
+  } catch {
+    return false;
+  }
+}
+
+function unavailableSubmitOutput(environment: NodeJS.ProcessEnv = process.env): HookOutput {
+  if (strictModeEnabled(environment)) {
+    return {
+      decision: 'block',
+      reason: ETA_STRICT_REASON,
+      systemMessage: ETA_STRICT_MESSAGE,
+    };
+  }
+
+  return {
+    systemMessage: ETA_UNAVAILABLE_MESSAGE,
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: [
+        '<agent-eta-status>',
+        ETA_UNAVAILABLE_MESSAGE,
+        'Before any other commentary, answer, or tool call, show the status line above verbatim as the first user-visible response for this turn. Then continue with the request. Do not omit or paraphrase it.',
+        '</agent-eta-status>',
+      ].join('\n'),
+    },
+  };
 }
 
 function hookEffort(value: unknown): string | undefined {
@@ -119,7 +153,7 @@ function buildCoreRepo(profile: RepositoryProfile) {
 
 async function handleSubmit(input: HookInput, options: HookInvocationOptions): Promise<HookOutput> {
   const prompt = asString(input.prompt);
-  if (!prompt) return {};
+  if (!prompt) return unavailableSubmitOutput(options.environment);
   const { provider, model, effort, speed, assumed } = runtimeConfiguration(input, options);
   const cwd = asString(input.cwd) ?? process.cwd();
   const promptFeatures = derivePromptFeatures(prompt);
@@ -212,7 +246,13 @@ async function handleCompletion(
 
 export async function handleHookObject(input: HookInput, options: HookInvocationOptions = {}): Promise<HookOutput> {
   const eventName = asString(input.hook_event_name);
-  if (eventName === 'UserPromptSubmit') return handleSubmit(input, options);
+  if (eventName === 'UserPromptSubmit') {
+    try {
+      return await handleSubmit(input, options);
+    } catch {
+      return unavailableSubmitOutput(options.environment);
+    }
+  }
   if (eventName === 'Stop') return handleCompletion(input, options, 'success');
   if (eventName === 'StopFailure') return handleCompletion(input, options, 'failed');
   if (eventName === 'SessionEnd') return handleCompletion(input, options, 'censored');
