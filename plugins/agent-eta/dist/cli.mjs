@@ -9042,7 +9042,7 @@ async function handleSubmit(input, options) {
   } catch {
   }
   const assumptionNote = assumed.length ? ` \xB7 assumes ${assumed.join(" + ")} (AGENT_ETA_* can override)` : "";
-  const forecastMessage = `Agent ETA \xB7 P50 ${estimate.formatted.p50} \xB7 P80 ${estimate.formatted.p80}${assumptionNote}`;
+  const forecastMessage = `Agent ETA \xB7 likely ${estimate.formatted.p50} \xB7 safer plan ${estimate.formatted.p80}${assumptionNote}`;
   return {
     systemMessage: forecastMessage,
     hookSpecificOutput: {
@@ -33535,7 +33535,7 @@ function createMcpServer(options = {}) {
     "estimate_task",
     {
       title: "Estimate task duration",
-      description: "Return a local P50/P80 forecast for a Codex or Claude Code task. The prompt is processed in memory and not stored.",
+      description: "Return a local likely duration and safer planning time for a Codex or Claude Code task. The prompt is processed in memory and not stored.",
       inputSchema: {
         prompt: external_exports.string().min(1).max(1e5).describe("The task to estimate. Processed locally and never persisted."),
         provider: external_exports.enum(["codex", "claude"]).optional(),
@@ -33790,7 +33790,7 @@ async function estimateCommand(args) {
     );
     return;
   }
-  output(`P50 ${estimate.formatted.p50} \xB7 P80 ${estimate.formatted.p80}`, false);
+  output(`Likely ${estimate.formatted.p50} \xB7 safer plan ${estimate.formatted.p80}`, false);
   if (estimate.drivers.length > 0) {
     output(`Drivers: ${estimate.drivers.slice(0, 3).map((driver) => driver.label).join(" \xB7 ")}`, false);
   }
@@ -33804,12 +33804,12 @@ async function calibrateCommand(args) {
   }
   output(`${status.state} \xB7 ${status.eligibleCalibrationRuns} eligible runs`, false);
   if (status.medianAbsoluteErrorMinutes !== null) {
-    output(`Median error ${status.medianAbsoluteErrorMinutes}m \xB7 P80 coverage ${Math.round((status.p80ObservedCoverage ?? 0) * 100)}%`, false);
+    output(`Median error ${status.medianAbsoluteErrorMinutes}m \xB7 safer-plan coverage ${Math.round((status.p80ObservedCoverage ?? 0) * 100)}%`, false);
   }
 }
 function historyLine(entry) {
   const actual = entry.elapsedMs === void 0 ? "running" : `${Math.round(entry.elapsedMs / 6e4)}m ${entry.outcome ?? ""}`.trim();
-  return `${entry.startedAt.slice(0, 16).replace("T", " ")}  ${entry.features.provider.padEnd(6)}  ${entry.features.prompt.taskClass.padEnd(9)}  P50 ${entry.estimate.formatted.p50.padEnd(7)}  ${actual}`;
+  return `${entry.startedAt.slice(0, 16).replace("T", " ")}  ${entry.features.provider.padEnd(6)}  ${entry.features.prompt.taskClass.padEnd(9)}  likely ${entry.estimate.formatted.p50.padEnd(7)}  ${actual}`;
 }
 async function historyCommand(args) {
   if (args.positionals[0] === "import") {

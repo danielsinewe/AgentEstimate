@@ -12,8 +12,8 @@
 
 ## What you get
 
-- **P50** — the modeled typical duration. Check observed coverage before treating it as a literal 50th percentile.
-- **P80** — the safer modeled planning bound. Check observed coverage before treating it as a literal 80th percentile.
+- **Likely time** — the modeled midpoint: about half of comparable runs should finish sooner.
+- **Safer plan** — extra room for slower runs: about four in five should finish sooner once your history supports that coverage.
 - **A stage forecast** — Orient → Reason → Change → Verify → Deliver.
 - **Explainable drivers** — ranked by marginal minutes, including scope, ambiguity, verification loops, deployment, and a deliberately weak repository-size prior.
 - **Personal calibration** — similar local runs correct the center and upper quantiles without double-counting overlapping cohorts or learning from implausible stop boundaries.
@@ -96,7 +96,7 @@ The server exposes three read-only tools:
 
 - `estimate_task` returns the range, stages, input clarity, spread, and top drivers.
 - `current_run` reads the latest non-stale hook-tracked run for a repository.
-- `calibration_status` reports sample counts, median error, and observed P50/P80 coverage.
+- `calibration_status` reports sample counts, median error, and observed likely and safer-plan coverage.
 
 MCP is excellent for asking for an estimate. Hooks are what make run capture automatic; an agent can otherwise choose not to call an MCP tool.
 
@@ -108,7 +108,7 @@ The build copies the runtime into the self-contained plugin bundle. Load it for 
 claude --plugin-dir "$PWD/plugins/agent-eta"
 ```
 
-Then ask, for example, “Estimate this task before I start.” The bundled skill, MCP server, and lifecycle hooks work together: the prompt-submit hook computes the initial P50/P80 range and gives the agent a privacy-safe developer instruction to show that exact line before any other reply or tool call. The UI warning remains as a fallback, and completion hooks record the elapsed outcome for local calibration.
+Then ask, for example, “Estimate this task before I start.” The bundled skill, MCP server, and lifecycle hooks work together: the prompt-submit hook computes a likely duration and safer planning time, then gives the agent a privacy-safe developer instruction to show that exact line before any other reply or tool call. The UI warning remains as a fallback, and completion hooks record the elapsed outcome for local calibration.
 
 The bundle also contains a Codex plugin manifest for personal or team marketplaces. This repository intentionally remains an application repository rather than a marketplace registry; the manual MCP setup above is the checkout-agnostic Codex path.
 
@@ -184,7 +184,7 @@ docs/research.md          Evidence, model design, and limitations
 
 ## Interpreting a result
 
-Use P50 when you can tolerate being wrong half the time. Use P80 when planning a meeting, a handoff, or whether to start another task. A wide P50→P80 gap is useful information: reduce ambiguity, specify verification, or split the work before delegating.
+Use the likely time for a rough expectation. Use the safer plan for a meeting, a handoff, or deciding whether to start another task. A wide gap is useful information: reduce ambiguity, specify verification, or split the work before delegating. The structured API keeps the technical field names `p50` and `p80` for compatibility.
 
 Do not read “80% by 14 minutes” as “80% complete after 11 minutes.” It is a pre-run distribution over comparable outcomes, not a live completion percentage. Until your observed P80 coverage approaches 80%, treat the interval as a structured heuristic rather than a calibrated probability.
 

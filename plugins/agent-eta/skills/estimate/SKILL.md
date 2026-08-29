@@ -7,7 +7,7 @@ description: Estimate how long a Codex or Claude Code task will take when the us
 
 Use the `estimate_task` MCP tool with the user's actual task. Pass `workspaceRoot` as the current task directory so repository signals come from the project, not the plugin bundle. Pass the known provider, model, reasoning effort, and speed mode; leave unknown values unset instead of inventing them.
 
-Lead with the P50 and P80 forecast. Describe P50 as the likely duration and P80 as the safer planning bound. Prefer the tool's ranked driver impacts and mention at most three when they help the user make the task smaller or more predictable.
+Lead with `Agent ETA · likely {p50} · safer plan {p80}`. Use those plain-language labels by default; only mention the technical P50/P80 names when the user asks about probability, calibration, or methodology. Prefer the tool's ranked driver impacts and mention at most three when they help the user make the task smaller or more predictable.
 
 Treat the result as a forecast, not a promise or a completion percentage. Repository size is a weak signal; scope, ambiguity, external systems, verification, browser work, and deployment are stronger signals.
 

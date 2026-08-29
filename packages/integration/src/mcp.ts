@@ -60,7 +60,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
     'estimate_task',
     {
       title: 'Estimate task duration',
-      description: 'Return a local P50/P80 forecast for a Codex or Claude Code task. The prompt is processed in memory and not stored.',
+      description: 'Return a local likely duration and safer planning time for a Codex or Claude Code task. The prompt is processed in memory and not stored.',
       inputSchema: {
         prompt: z.string().min(1).max(100_000).describe('The task to estimate. Processed locally and never persisted.'),
         provider: z.enum(['codex', 'claude']).optional(),

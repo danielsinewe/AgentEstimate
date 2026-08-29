@@ -70,6 +70,15 @@ describe('CLI', () => {
     expect(output.stdout()).not.toContain(secret);
   });
 
+  it('uses plain-language labels in human-readable estimates', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-eta-cli-copy-'));
+    await writeFile(join(root, 'index.ts'), 'export const value = 1;', 'utf8');
+    const output = captureProcessOutput();
+    expect(await runCli(['estimate', 'Review this file.', '--cwd', root])).toBe(0);
+    expect(output.stdout()).toMatch(/^Likely .+ · safer plan .+/u);
+    expect(output.stdout()).not.toMatch(/P50|P80/u);
+  });
+
   it('reports history and calibration from the private store', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'agent-eta-cli-history-'));
     const store = new CalibrationStore({ dataDir });

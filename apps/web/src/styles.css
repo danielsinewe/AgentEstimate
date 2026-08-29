@@ -222,7 +222,7 @@ a {
   right: 5vw;
   bottom: 86px;
   color: rgba(23, 23, 20, 0.3);
-  content: 'P50 / P80';
+  content: 'LIKELY / SAFER';
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.18em;
@@ -756,7 +756,9 @@ a {
   top: -20px;
   left: 50%;
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 7px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   transform: translateX(-50%);
 }
 

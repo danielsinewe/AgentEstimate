@@ -292,14 +292,14 @@ describe('hook lifecycle and fail-open privacy', () => {
       },
       { provider: 'codex', dataDir, now: () => new Date('2026-08-28T10:00:00.000Z') },
     );
-    expect(submit.systemMessage).toMatch(/^Agent ETA · P50 .+ · P80 .+$/u);
+    expect(submit.systemMessage).toMatch(/^Agent ETA · likely .+ · safer plan .+$/u);
     expect(submit.hookSpecificOutput).toEqual({
       hookEventName: 'UserPromptSubmit',
       additionalContext: expect.stringContaining(
         `${submit.systemMessage}\nBefore any other commentary, answer, or tool call`,
       ),
     });
-    expect(submit.hookSpecificOutput?.additionalContext.startsWith('<agent-eta-forecast>\nAgent ETA · P50')).toBe(true);
+    expect(submit.hookSpecificOutput?.additionalContext.startsWith('<agent-eta-forecast>\nAgent ETA · likely')).toBe(true);
     expect(submit.hookSpecificOutput?.additionalContext.endsWith('</agent-eta-forecast>')).toBe(true);
     expect(submit.hookSpecificOutput?.additionalContext).not.toContain(secret);
     expect(submit.hookSpecificOutput?.additionalContext).not.toContain(cwd);
@@ -413,7 +413,7 @@ describe('hook lifecycle and fail-open privacy', () => {
       { hook_event_name: 'UserPromptSubmit', session_id: 'session', prompt: 'Fix and test the bug.' },
       { dataDir: blockedPath },
     );
-    expect(result.systemMessage).toMatch(/^Agent ETA · P50/u);
+    expect(result.systemMessage).toMatch(/^Agent ETA · likely/u);
     await expect(access(join(blockedPath, 'runs.jsonl'))).rejects.toThrow();
   });
 });

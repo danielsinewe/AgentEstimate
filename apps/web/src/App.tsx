@@ -202,7 +202,7 @@ function ForecastRail({ forecast }: { forecast: ForecastView }) {
   const position = (value: number) => `${Math.min(96, Math.max(2, (value / ceiling) * 100))}%`;
 
   return (
-    <div className="forecast-rail" aria-label={`Typical ${formatDuration(p50)}, P80 planning bound ${formatDuration(p80)}`}>
+    <div className="forecast-rail" aria-label={`Likely duration ${formatDuration(p50)}, safer planning time ${formatDuration(p80)}`}>
       <div className="rail-label rail-label-start">now</div>
       <div className="rail-label rail-label-tail" style={{ left: position(p95) }}>
         tail
@@ -213,10 +213,10 @@ function ForecastRail({ forecast }: { forecast: ForecastView }) {
         style={{ left: position(p25), width: `calc(${position(p80)} - ${position(p25)})` }}
       />
       <div className="rail-marker rail-marker-p50" style={{ left: position(p50) }}>
-        <span>P50</span>
+        <span>likely</span>
       </div>
       <div className="rail-marker rail-marker-p80" style={{ left: position(p80) }}>
-        <span>P80</span>
+        <span>safer</span>
       </div>
     </div>
   );
@@ -341,7 +341,7 @@ function App() {
     setToast('Local calibration history cleared.');
   }
 
-  const estimateSummary = `Agent ETA: ${formatDuration(forecast.quantiles.p50)} typical; ${formatDuration(forecast.quantiles.p80)} P80 planning bound (${provider === 'codex' ? 'Codex' : 'Claude Code'}, ${effort} effort).`;
+  const estimateSummary = `Agent ETA: likely ${formatDuration(forecast.quantiles.p50)}; safer plan ${formatDuration(forecast.quantiles.p80)} (${provider === 'codex' ? 'Codex' : 'Claude Code'}, ${effort} effort).`;
 
   return (
     <div className="app-shell">
@@ -510,15 +510,15 @@ function App() {
                 <span>{taskClassLabel(forecast.analysis.taskClass)}</span>
               </div>
               <div className="ready-block">
-                <span>Planning window</span>
+                <span>Likely → safer plan</span>
                 <div className="ready-time">
-                  <strong>{toClock(forecast.quantiles.p25)}</strong>
+                  <strong>{toClock(forecast.quantiles.p50)}</strong>
                   <i>—</i>
                   <strong>{toClock(forecast.quantiles.p80)}</strong>
                 </div>
                 <div className="ready-meta">
-                  <span><b>{formatDuration(forecast.quantiles.p50)}</b> typical</span>
-                  <span>Plan for <b>{toClock(forecast.quantiles.p80)}</b> (P80)</span>
+                  <span>Likely in <b>{formatDuration(forecast.quantiles.p50)}</b></span>
+                  <span>Safer plan <b>{formatDuration(forecast.quantiles.p80)}</b></span>
                 </div>
               </div>
 
@@ -561,7 +561,7 @@ function App() {
               <div className="result-section stage-section">
                 <div className="result-section-title">
                   <h3>Expected path</h3>
-                  <span>P50</span>
+                  <span>Likely</span>
                 </div>
                 <div className="stages">
                   {forecast.stages.map((stage) => (
@@ -582,7 +582,7 @@ function App() {
                   {copied === 'estimate' ? <Check size={17} /> : <Copy size={17} />}
                 </button>
               </div>
-              <p className="result-caveat">Forecasts when the agent returns control—not whether the work is correct.</p>
+              <p className="result-caveat">Likely is the midpoint. Safer adds room for slower runs. Return time, not correctness.</p>
             </aside>
           </div>
         </section>

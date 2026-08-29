@@ -171,7 +171,7 @@ async function handleSubmit(input: HookInput, options: HookInvocationOptions): P
   const assumptionNote = assumed.length
     ? ` · assumes ${assumed.join(' + ')} (AGENT_ETA_* can override)`
     : '';
-  const forecastMessage = `Agent ETA · P50 ${estimate.formatted.p50} · P80 ${estimate.formatted.p80}${assumptionNote}`;
+  const forecastMessage = `Agent ETA · likely ${estimate.formatted.p50} · safer plan ${estimate.formatted.p80}${assumptionNote}`;
   return {
     systemMessage: forecastMessage,
     hookSpecificOutput: {

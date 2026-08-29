@@ -1852,7 +1852,7 @@ async function handleSubmit(input, options) {
   } catch {
   }
   const assumptionNote = assumed.length ? ` \xB7 assumes ${assumed.join(" + ")} (AGENT_ETA_* can override)` : "";
-  const forecastMessage = `Agent ETA \xB7 P50 ${estimate.formatted.p50} \xB7 P80 ${estimate.formatted.p80}${assumptionNote}`;
+  const forecastMessage = `Agent ETA \xB7 likely ${estimate.formatted.p50} \xB7 safer plan ${estimate.formatted.p80}${assumptionNote}`;
   return {
     systemMessage: forecastMessage,
     hookSpecificOutput: {

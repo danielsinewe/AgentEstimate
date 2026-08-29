@@ -31,6 +31,16 @@ These are predictive quantiles, not percentages complete. Once a task has been r
 
 Cold-start probabilities are structured heuristic ranges. The `calibration_status` tool reports observed P50 and P80 coverage so probability language can be checked against actual local outcomes.
 
+## How the product communicates the range
+
+The engine and structured API retain predictive quantiles because they are the auditable mathematical contract. The default user interface does not require people to decode those names:
+
+- **Likely** is the modeled midpoint: about half of comparable runs should finish sooner.
+- **Safer plan** leaves room for slower runs: about four in five should finish sooner once observed history supports that coverage.
+- **P50/P80** remain available in technical documentation, structured output, and calibration analysis.
+
+This is progressive disclosure, not a loss of precision. The first view answers the user's decision—“when should I expect it, and how much time should I allow?”—while the methodology keeps the exact statistical meaning inspectable.
+
 ## Official-source review
 
 The research intentionally prioritizes first-party product documentation. Third-party anecdotes are noisy, usually omit task definition and stopping rules, and often measure perceived latency rather than a complete coding-agent turn.
@@ -51,6 +61,10 @@ The research intentionally prioritizes first-party product documentation. Third-
 | OpenAI's 2026 [agent-work study](https://openai.com/index/how-agents-are-transforming-work/) shows that users increasingly delegate longer, multi-step work and explicitly labels its human-time thresholds as directional estimates. | Real usage spans short interactions and long-horizon delegated work, but human-equivalent task time is still not agent runtime. | Preserve a broad task range while keeping the forecast target strictly return-to-control time. |
 | Gneiting, Balabdaoui, and Raftery's [probabilistic forecast framework](https://doi.org/10.1111/j.1467-9868.2007.00587.x) defines the goal as sharp predictive distributions subject to calibration. | A range should not be widened indiscriminately just to catch every outcome. | Track coverage and interval width together; prefer evidence-weighted correction over blanket padding. |
 | Jørgensen's [probabilistic software-effort evaluation](https://doi.org/10.1016/j.infsof.2019.08.006) applies the same calibration-and-informativeness principle to software work. | P50/P80 labels are only useful when their observed coverage is auditable. | Store original quantiles, report coverage, and learn quantile-specific corrections when enough local evidence exists. |
+| Grounds, Joslyn, and Otsuka's [two experiments on predictive interval forecasts](https://doi.org/10.1155/2017/3932565) found that intervals improved decisions across student and general-population samples, while some users still fundamentally misread the bounds. Text and frequency explanations helped. | A range is useful, but unexplained statistical notation and ambiguous graphics are not self-explanatory. | Lead with two concrete times and plain labels; keep the statistical terms out of the default view. |
+| Teigen and colleagues' [review of numeric ranges and uncertainty](https://pmc.ncbi.nlm.nih.gov/articles/PMC9660216/) reports that people often confuse interval width with confidence, treat values inside a range as equally likely, and fail to distinguish confidence levels in software estimates. | Showing P50/P80 does not guarantee a working understanding, even for software practitioners. | Explain the decision meaning instead of expecting users to translate percentiles. |
+| van der Bles and colleagues' [experiments on communicating uncertainty](https://doi.org/10.1073/pnas.1913678117) recommend a numeric range with a point estimate and found that uncertainty need not reduce trust in the source. | Hiding uncertainty is unnecessary; contextualizing it is the important part. | Keep both a likely time and a safer time rather than collapsing to one confident-looking number. |
+| The ONS [plain-language standard](https://service-manual.ons.gov.uk/content/writing-for-users/plain-language) and GOV.UK [UI writing guidance](https://www.gov.uk/service-manual/design/writing-for-user-interfaces) advise avoiding unexplained technical terms and minimizing cognitive load, including for specialists. | Expert audiences also benefit from direct, scannable labels. | Use “Likely” and “Safer plan” in the product; reserve P50/P80 for technical drill-downs. |
 
 ### Evidence that was deliberately not treated as ground truth
 

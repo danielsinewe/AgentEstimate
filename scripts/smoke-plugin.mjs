@@ -63,7 +63,11 @@ const submitted = await runCommand(commandFor('UserPromptSubmit'), {
   prompt: `Review ${privatePromptMarker}, run tests, and verify the interface in a browser.`,
 });
 const submitOutput = JSON.parse(submitted.stdout);
-if (typeof submitOutput.systemMessage !== 'string' || !submitOutput.systemMessage.includes('P80')) {
+if (
+  typeof submitOutput.systemMessage !== 'string'
+  || !submitOutput.systemMessage.startsWith('Agent ETA · likely ')
+  || !submitOutput.systemMessage.includes(' · safer plan ')
+) {
   throw new Error('Prompt-submit hook did not return an ETA');
 }
 if (
