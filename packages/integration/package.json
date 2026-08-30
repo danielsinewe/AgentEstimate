@@ -34,7 +34,7 @@
   "dependencies": {
     "@agent-eta/core": "0.1.0",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "zod": "4.4.3"
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "tsup": "8.5.1"

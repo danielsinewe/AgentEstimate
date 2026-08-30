@@ -202,7 +202,7 @@ function ForecastRail({ forecast }: { forecast: ForecastView }) {
   const position = (value: number) => `${Math.min(96, Math.max(2, (value / ceiling) * 100))}%`;
 
   return (
-    <div className="forecast-rail" aria-label={`Likely duration ${formatDuration(p50)}, safer planning time ${formatDuration(p80)}`}>
+    <div className="forecast-rail" aria-label={`About ${formatDuration(p50)}, allow up to ${formatDuration(p80)}`}>
       <div className="rail-label rail-label-start">now</div>
       <div className="rail-label rail-label-tail" style={{ left: position(p95) }}>
         tail
@@ -213,10 +213,10 @@ function ForecastRail({ forecast }: { forecast: ForecastView }) {
         style={{ left: position(p25), width: `calc(${position(p80)} - ${position(p25)})` }}
       />
       <div className="rail-marker rail-marker-p50" style={{ left: position(p50) }}>
-        <span>likely</span>
+        <span>about</span>
       </div>
       <div className="rail-marker rail-marker-p80" style={{ left: position(p80) }}>
-        <span>safer</span>
+        <span>allow</span>
       </div>
     </div>
   );
@@ -341,7 +341,7 @@ function App() {
     setToast('Local calibration history cleared.');
   }
 
-  const estimateSummary = `Agent ETA: likely ${formatDuration(forecast.quantiles.p50)}; safer plan ${formatDuration(forecast.quantiles.p80)} (${provider === 'codex' ? 'Codex' : 'Claude Code'}, ${effort} effort).`;
+  const estimateSummary = `⏱ About ${formatDuration(forecast.quantiles.p50)} · allow up to ${formatDuration(forecast.quantiles.p80)}`;
 
   return (
     <div className="app-shell">
@@ -510,15 +510,15 @@ function App() {
                 <span>{taskClassLabel(forecast.analysis.taskClass)}</span>
               </div>
               <div className="ready-block">
-                <span>Likely → safer plan</span>
+                <span>About → allow until</span>
                 <div className="ready-time">
                   <strong>{toClock(forecast.quantiles.p50)}</strong>
                   <i>—</i>
                   <strong>{toClock(forecast.quantiles.p80)}</strong>
                 </div>
                 <div className="ready-meta">
-                  <span>Likely in <b>{formatDuration(forecast.quantiles.p50)}</b></span>
-                  <span>Safer plan <b>{formatDuration(forecast.quantiles.p80)}</b></span>
+                  <span>About <b>{formatDuration(forecast.quantiles.p50)}</b></span>
+                  <span>Allow up to <b>{formatDuration(forecast.quantiles.p80)}</b></span>
                 </div>
               </div>
 
@@ -561,7 +561,7 @@ function App() {
               <div className="result-section stage-section">
                 <div className="result-section-title">
                   <h3>Expected path</h3>
-                  <span>Likely</span>
+                  <span>About</span>
                 </div>
                 <div className="stages">
                   {forecast.stages.map((stage) => (
@@ -582,7 +582,7 @@ function App() {
                   {copied === 'estimate' ? <Check size={17} /> : <Copy size={17} />}
                 </button>
               </div>
-              <p className="result-caveat">Likely is the midpoint. Safer adds room for slower runs. Return time, not correctness.</p>
+              <p className="result-caveat">Return-time forecast—not a correctness score.</p>
             </aside>
           </div>
         </section>
@@ -597,7 +597,7 @@ function App() {
             <article>
               <span>Before the run</span>
               <h3>Scope × setup</h3>
-              <p>Task class, effective model and effort, likely change surface, tests, browser work, services, and deployment.</p>
+              <p>Task class, effective model and effort, expected change surface, tests, browser work, services, and deployment.</p>
             </article>
             <article>
               <span>During the run</span>
@@ -625,7 +625,7 @@ function App() {
           <div className="install-copy">
             <span className="section-number section-number-light">03</span>
             <h2 id="install-title">Make it<br /><em>automatic.</em></h2>
-            <p>One local plugin. A forecast before every supported prompt. No memory trick required.</p>
+            <p>One local plugin. One clean forecast at the start of every prompt.</p>
             <a className="install-link" href="https://github.com/danielsinewe/AgentEstimate#quick-start" target="_blank" rel="noreferrer">
               Open setup guide <ArrowUpRight size={16} />
             </a>
@@ -633,7 +633,7 @@ function App() {
           <div className="install-stack">
             <article>
               <div className="install-icon"><Sparkles size={19} /></div>
-              <div><span>Codex plugin</span><strong>Review once, ETA every prompt</strong></div>
+              <div><span>Codex plugin</span><strong>Review once, clean ETA every prompt</strong></div>
               <Check size={18} />
             </article>
             <article>

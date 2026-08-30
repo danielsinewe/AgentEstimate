@@ -252,10 +252,10 @@ describe('CalibrationStore', () => {
 
     expect((await store.history()).find((entry) => entry.outcome === 'censored')).toMatchObject({ elapsedMs: 60_000 });
     expect((await store.completeRun({ sessionId: 'session', turnId: 'turn-1', outcome: 'success' })).created).toBe(false);
-    expect(await store.currentRun({ repoIdentity: '/repo-b' })).toBeNull();
-    expect(await store.currentRun({ repoIdentity: '/repo-a' })).toMatchObject({ outcome: undefined });
+    expect(await store.currentRun({ repoIdentity: '/repo-b', maxAgeMs: Number.MAX_SAFE_INTEGER })).toBeNull();
+    expect(await store.currentRun({ repoIdentity: '/repo-a', maxAgeMs: Number.MAX_SAFE_INTEGER })).toMatchObject({ outcome: undefined });
     expect((await store.completeRun({ sessionId: 'session', turnId: 'turn-2', outcome: 'success' })).created).toBe(true);
-    expect(await store.currentRun({ repoIdentity: '/repo-a' })).toBeNull();
+    expect(await store.currentRun({ repoIdentity: '/repo-a', maxAgeMs: Number.MAX_SAFE_INTEGER })).toBeNull();
   });
 
   it('does not surface stale active runs', async () => {
@@ -292,14 +292,14 @@ describe('hook lifecycle, visible failures, and privacy', () => {
       },
       { provider: 'codex', dataDir, now: () => new Date('2026-08-28T10:00:00.000Z') },
     );
-    expect(submit.systemMessage).toMatch(/^Agent ETA · likely .+ · safer plan .+$/u);
+    expect(submit.systemMessage).toMatch(/^⏱ About .+ · allow up to .+$/u);
     expect(submit.hookSpecificOutput).toEqual({
       hookEventName: 'UserPromptSubmit',
       additionalContext: expect.stringContaining(
         `${submit.systemMessage}\nBefore any other commentary, answer, or tool call`,
       ),
     });
-    expect(submit.hookSpecificOutput?.additionalContext.startsWith('<agent-eta-forecast>\nAgent ETA · likely')).toBe(true);
+    expect(submit.hookSpecificOutput?.additionalContext.startsWith('<agent-eta-forecast>\n⏱ About')).toBe(true);
     expect(submit.hookSpecificOutput?.additionalContext.endsWith('</agent-eta-forecast>')).toBe(true);
     expect(submit.hookSpecificOutput?.additionalContext).not.toContain(secret);
     expect(submit.hookSpecificOutput?.additionalContext).not.toContain(cwd);
@@ -311,7 +311,7 @@ describe('hook lifecycle, visible failures, and privacy', () => {
     expect(rawHistory).not.toContain(cwd);
     expect(rawHistory).not.toContain('deploy to production');
     const store = new CalibrationStore({ dataDir });
-    expect(await store.currentRun()).toMatchObject({
+    expect(await store.currentRun({ maxAgeMs: Number.MAX_SAFE_INTEGER })).toMatchObject({
       features: {
         provider: 'codex',
         model: 'gpt-5.6-codex',
@@ -327,19 +327,18 @@ describe('hook lifecycle, visible failures, and privacy', () => {
         { provider: 'codex', dataDir, now: () => new Date('2026-08-28T10:09:00.000Z') },
       ),
     ).toEqual({});
-    expect(await store.currentRun()).toBeNull();
+    expect(await store.currentRun({ maxAgeMs: Number.MAX_SAFE_INTEGER })).toBeNull();
     expect((await store.history())[0]).toMatchObject({ elapsedMs: 540_000, outcome: 'success' });
   });
 
-  it('states hook assumptions and supports explicit runtime configuration overrides', async () => {
+  it('keeps fallback assumptions out of the chat while honoring runtime configuration overrides', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'agent-eta-hook-config-'));
     const assumed = await handleHookObject(
       { hook_event_name: 'UserPromptSubmit', session_id: 'assumed', prompt: 'Review this change.' },
       { provider: 'claude', dataDir },
     );
-    expect(assumed.systemMessage).toContain(
-      'assumes claude-default model + medium effort + standard speed (AGENT_ETA_* can override)',
-    );
+    expect(assumed.systemMessage).toMatch(/^⏱ About .+ · allow up to .+$/u);
+    expect(assumed.systemMessage).not.toMatch(/assum|medium effort|standard speed|AGENT_ETA/iu);
 
     const configuredDir = await mkdtemp(join(tmpdir(), 'agent-eta-hook-configured-'));
     const configured = await handleHookObject(
@@ -359,7 +358,7 @@ describe('hook lifecycle, visible failures, and privacy', () => {
         },
       },
     );
-    expect(configured.systemMessage).not.toContain('assumes');
+    expect(configured.systemMessage).not.toMatch(/assum|AGENT_ETA/iu);
     expect(await new CalibrationStore({ dataDir: configuredDir }).currentRun()).toMatchObject({
       features: { provider: 'claude', model: 'claude-opus-5', effort: 'high', speed: 'fast' },
     });
@@ -377,6 +376,28 @@ describe('hook lifecycle, visible failures, and privacy', () => {
     expect(await new CalibrationStore({ dataDir: objectEffortDir }).currentRun()).toMatchObject({
       features: { effort: 'xhigh' },
     });
+  });
+
+  it('returns one compact forecast for every submitted prompt', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'agent-eta-hook-repeat-'));
+    const options = { provider: 'codex' as const, dataDir };
+    const first = await handleHookObject(
+      { hook_event_name: 'UserPromptSubmit', session_id: 'session', turn_id: 'turn-1', prompt: 'Review this file.' },
+      options,
+    );
+    await handleHookObject(
+      { hook_event_name: 'Stop', session_id: 'session', turn_id: 'turn-1' },
+      options,
+    );
+    const second = await handleHookObject(
+      { hook_event_name: 'UserPromptSubmit', session_id: 'session', turn_id: 'turn-2', prompt: 'Now test it.' },
+      options,
+    );
+
+    expect(first.systemMessage).toMatch(/^⏱ About .+ · allow up to .+$/u);
+    expect(second.systemMessage).toMatch(/^⏱ About .+ · allow up to .+$/u);
+    expect(first.systemMessage).not.toMatch(/assum|AGENT_ETA/iu);
+    expect(second.systemMessage).not.toMatch(/assum|AGENT_ETA/iu);
   });
 
   it.each([
@@ -452,7 +473,7 @@ describe('hook lifecycle, visible failures, and privacy', () => {
       { hook_event_name: 'UserPromptSubmit', session_id: 'session', prompt: 'Fix and test the bug.' },
       { dataDir: blockedPath },
     );
-    expect(result.systemMessage).toMatch(/^Agent ETA · likely/u);
+    expect(result.systemMessage).toMatch(/^⏱ About/u);
     await expect(access(join(blockedPath, 'runs.jsonl'))).rejects.toThrow();
   });
 });

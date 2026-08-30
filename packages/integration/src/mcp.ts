@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { estimateTask } from '@agent-eta/core';
+import { estimateTask, formatDuration } from '@agent-eta/core';
 import { z } from 'zod';
 import {
   derivePromptFeatures,
@@ -60,7 +60,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
     'estimate_task',
     {
       title: 'Estimate task duration',
-      description: 'Return a local likely duration and safer planning time for a Codex or Claude Code task. The prompt is processed in memory and not stored.',
+      description: 'Return a local expected duration and an allow-up-to planning time for a Codex or Claude Code task. The prompt is processed in memory and not stored.',
       inputSchema: {
         prompt: z.string().min(1).max(100_000).describe('The task to estimate. Processed locally and never persisted.'),
         provider: z.enum(['codex', 'claude']).optional(),
@@ -121,6 +121,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       });
 
       return jsonResult({
+        summary: `About ${estimate.formatted.p50} · allow up to ${estimate.formatted.p80}`,
         p50: estimate.formatted.p50,
         p80: estimate.formatted.p80,
         minutes: estimate.minutes,
@@ -158,11 +159,18 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
       const activeWorkspaceRoot = resolveWorkspaceRoot(workspaceRootInput, fallbackWorkspaceRoot);
       const current = await store.currentRun(activeWorkspaceRoot ? { repoIdentity: activeWorkspaceRoot } : {});
       if (!current) return jsonResult({ active: false });
+      const elapsedMinutes = Math.max(0, (Date.now() - Date.parse(current.startedAt)) / 60_000);
+      const status = elapsedMinutes <= current.estimate.minutes.p50
+        ? `Working ${formatDuration(elapsedMinutes)} · within estimate`
+        : elapsedMinutes <= current.estimate.minutes.p80
+          ? `Working ${formatDuration(elapsedMinutes)} · still within plan`
+          : `Working ${formatDuration(elapsedMinutes)} · taking longer than planned`;
       return jsonResult({
         active: true,
         runId: current.runId,
         startedAt: current.startedAt,
-        elapsedMinutes: Math.max(0, (Date.now() - Date.parse(current.startedAt)) / 60_000),
+        elapsedMinutes,
+        status,
         provider: current.features.provider,
         model: current.features.model,
         taskClass: current.features.prompt.taskClass,

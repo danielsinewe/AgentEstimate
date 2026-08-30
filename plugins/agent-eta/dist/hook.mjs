@@ -1819,12 +1819,7 @@ function runtimeConfiguration(input, options) {
     provider,
     model: normalizeModel(modelSignal, provider),
     effort: normalizeEffort(effortSignal),
-    speed: normalizeSpeed(speedSignal),
-    assumed: [
-      ...!modelSignal ? [`${provider}-default model`] : [],
-      ...!effortSignal ? ["medium effort"] : [],
-      ...!speedSignal ? ["standard speed"] : []
-    ]
+    speed: normalizeSpeed(speedSignal)
   };
 }
 function buildCoreRepo(profile) {
@@ -1840,7 +1835,7 @@ function buildCoreRepo(profile) {
 async function handleSubmit(input, options) {
   const prompt = asString(input.prompt);
   if (!prompt) return unavailableSubmitOutput(options.environment);
-  const { provider, model, effort, speed, assumed } = runtimeConfiguration(input, options);
+  const { provider, model, effort, speed } = runtimeConfiguration(input, options);
   const cwd = asString(input.cwd) ?? process.cwd();
   const promptFeatures = derivePromptFeatures(prompt);
   const store = new CalibrationStore({ dataDir: options.dataDir });
@@ -1882,8 +1877,7 @@ async function handleSubmit(input, options) {
     });
   } catch {
   }
-  const assumptionNote = assumed.length ? ` \xB7 assumes ${assumed.join(" + ")} (AGENT_ETA_* can override)` : "";
-  const forecastMessage = `Agent ETA \xB7 likely ${estimate.formatted.p50} \xB7 safer plan ${estimate.formatted.p80}${assumptionNote}`;
+  const forecastMessage = `\u23F1 About ${estimate.formatted.p50} \xB7 allow up to ${estimate.formatted.p80}`;
   return {
     systemMessage: forecastMessage,
     hookSpecificOutput: {

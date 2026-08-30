@@ -146,7 +146,7 @@ async function estimateCommand(args: ParsedCommandArgs): Promise<void> {
     );
     return;
   }
-  output(`Likely ${estimate.formatted.p50} · safer plan ${estimate.formatted.p80}`, false);
+  output(`About ${estimate.formatted.p50} · allow up to ${estimate.formatted.p80}`, false);
   if (estimate.drivers.length > 0) {
     output(`Drivers: ${estimate.drivers.slice(0, 3).map((driver) => driver.label).join(' · ')}`, false);
   }
@@ -161,13 +161,13 @@ async function calibrateCommand(args: ParsedCommandArgs): Promise<void> {
   }
   output(`${status.state} · ${status.eligibleCalibrationRuns} eligible runs`, false);
   if (status.medianAbsoluteErrorMinutes !== null) {
-    output(`Median error ${status.medianAbsoluteErrorMinutes}m · safer-plan coverage ${Math.round((status.p80ObservedCoverage ?? 0) * 100)}%`, false);
+    output(`Median error ${status.medianAbsoluteErrorMinutes}m · planning coverage ${Math.round((status.p80ObservedCoverage ?? 0) * 100)}%`, false);
   }
 }
 
 function historyLine(entry: RunHistoryEntry): string {
   const actual = entry.elapsedMs === undefined ? 'running' : `${Math.round(entry.elapsedMs / 60_000)}m ${entry.outcome ?? ''}`.trim();
-  return `${entry.startedAt.slice(0, 16).replace('T', ' ')}  ${entry.features.provider.padEnd(6)}  ${entry.features.prompt.taskClass.padEnd(9)}  likely ${entry.estimate.formatted.p50.padEnd(7)}  ${actual}`;
+  return `${entry.startedAt.slice(0, 16).replace('T', ' ')}  ${entry.features.provider.padEnd(6)}  ${entry.features.prompt.taskClass.padEnd(9)}  about ${entry.estimate.formatted.p50.padEnd(7)}  ${actual}`;
 }
 
 async function historyCommand(args: ParsedCommandArgs): Promise<void> {

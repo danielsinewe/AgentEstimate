@@ -132,11 +132,6 @@ function runtimeConfiguration(input: HookInput, options: HookInvocationOptions) 
     model: normalizeModel(modelSignal, provider),
     effort: normalizeEffort(effortSignal),
     speed: normalizeSpeed(speedSignal),
-    assumed: [
-      ...(!modelSignal ? [`${provider}-default model`] : []),
-      ...(!effortSignal ? ['medium effort'] : []),
-      ...(!speedSignal ? ['standard speed'] : []),
-    ],
   };
 }
 
@@ -154,7 +149,7 @@ function buildCoreRepo(profile: RepositoryProfile) {
 async function handleSubmit(input: HookInput, options: HookInvocationOptions): Promise<HookOutput> {
   const prompt = asString(input.prompt);
   if (!prompt) return unavailableSubmitOutput(options.environment);
-  const { provider, model, effort, speed, assumed } = runtimeConfiguration(input, options);
+  const { provider, model, effort, speed } = runtimeConfiguration(input, options);
   const cwd = asString(input.cwd) ?? process.cwd();
   const promptFeatures = derivePromptFeatures(prompt);
   const store = new CalibrationStore({ dataDir: options.dataDir });
@@ -202,10 +197,7 @@ async function handleSubmit(input: HookInput, options: HookInvocationOptions): P
     // Estimation remains useful even when the local calibration store is unavailable.
   }
 
-  const assumptionNote = assumed.length
-    ? ` · assumes ${assumed.join(' + ')} (AGENT_ETA_* can override)`
-    : '';
-  const forecastMessage = `Agent ETA · likely ${estimate.formatted.p50} · safer plan ${estimate.formatted.p80}${assumptionNote}`;
+  const forecastMessage = `⏱ About ${estimate.formatted.p50} · allow up to ${estimate.formatted.p80}`;
   return {
     systemMessage: forecastMessage,
     hookSpecificOutput: {

@@ -67,10 +67,11 @@ const submitted = await runCommand(commandFor('UserPromptSubmit'), {
 const submitOutput = JSON.parse(submitted.stdout);
 if (
   typeof submitOutput.systemMessage !== 'string'
-  || !submitOutput.systemMessage.startsWith('Agent ETA · likely ')
-  || !submitOutput.systemMessage.includes(' · safer plan ')
+  || !submitOutput.systemMessage.startsWith('⏱ About ')
+  || !submitOutput.systemMessage.includes(' · allow up to ')
+  || /assum|medium effort|standard speed|AGENT_ETA/iu.test(submitOutput.systemMessage)
 ) {
-  throw new Error('Prompt-submit hook did not return an ETA');
+  throw new Error('Prompt-submit hook did not return a clean, user-facing ETA');
 }
 if (
   submitOutput.hookSpecificOutput?.hookEventName !== 'UserPromptSubmit'

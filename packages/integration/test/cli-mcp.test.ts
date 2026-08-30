@@ -75,7 +75,7 @@ describe('CLI', () => {
     await writeFile(join(root, 'index.ts'), 'export const value = 1;', 'utf8');
     const output = captureProcessOutput();
     expect(await runCli(['estimate', 'Review this file.', '--cwd', root])).toBe(0);
-    expect(output.stdout()).toMatch(/^Likely .+ · safer plan .+/u);
+    expect(output.stdout()).toMatch(/^About .+ · allow up to .+/u);
     expect(output.stdout()).not.toMatch(/P50|P80/u);
   });
 
@@ -156,6 +156,7 @@ describe('MCP server', () => {
       });
       const estimateData = estimate.structuredContent as Record<string, unknown>;
       expect(estimateData).toMatchObject({
+        summary: expect.stringMatching(/^About .+ · allow up to .+$/u),
         taskClass: 'feature',
         repo: { fileCount: 1, languageCount: 1 },
         privacy: 'Prompt processed in memory; no prompt or source content was persisted.',
@@ -177,6 +178,7 @@ describe('MCP server', () => {
       const activeRun = await client.callTool({ name: 'current_run', arguments: { workspaceRoot: root } });
       expect(activeRun.structuredContent).toMatchObject({
         active: true,
+        status: expect.stringMatching(/^Working .+ · within estimate$/u),
         provider: 'codex',
         model: 'gpt-5.6-codex',
         taskClass: 'feature',
