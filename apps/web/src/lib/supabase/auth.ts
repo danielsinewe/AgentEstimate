@@ -37,6 +37,7 @@ export async function signInWithGitHub(
     options: {
       redirectTo: sameOriginRedirect(redirectTo),
       scopes: 'read:user user:email',
+      skipBrowserRedirect: true,
     },
   });
   if (error) return remoteFailure(error.message);

@@ -159,7 +159,14 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
     if (!result.ok) {
       setError(result.message);
       setBusy(null);
+      return;
     }
+    if (!result.data.redirectUrl) {
+      setError('GitHub sign-in could not be opened. Please try again.');
+      setBusy(null);
+      return;
+    }
+    window.location.assign(result.data.redirectUrl);
   }
 
   async function handleSignOut() {

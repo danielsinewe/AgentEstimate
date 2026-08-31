@@ -85,6 +85,7 @@ export function getSupabaseClient(
     auth: {
       autoRefreshToken: true,
       detectSessionInUrl: true,
+      flowType: 'pkce',
       persistSession: true,
       storageKey: 'agent-eta-auth-v1',
     },
