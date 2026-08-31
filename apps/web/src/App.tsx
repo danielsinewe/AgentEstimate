@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUpRight,
   Check,
@@ -16,31 +16,26 @@ import {
   estimateTask,
   formatDuration,
   type CalibrationSample,
+  type AmbiguityLevel,
   type Effort,
   type EstimateInput,
   type Provider,
   type RepoProfile,
+  type ScopeLevel,
   type SpeedMode,
   type TaskClass,
 } from '@agent-eta/core';
 import { scanRepository, type ScannedRepository } from './repoScanner';
+import { toLocalRunInput, type LocalRunInput } from './lib/supabase/validation';
+
+const CloudAccount = lazy(() => import('./CloudAccount'));
 
 type TaskFlag = 'tests' | 'browser' | 'external' | 'deploy';
 
-interface WebCalibrationSample {
-  id: string;
-  provider: Provider;
-  model: string;
-  effort: Effort;
-  speed: SpeedMode;
-  taskClass: TaskClass;
-  estimatedMinutes: number;
-  estimatedP80Minutes?: number;
-  estimatedP95Minutes?: number;
+type WebCalibrationSample = LocalRunInput & {
   actualMinutes: number;
   successful: boolean;
-  createdAt: string;
-}
+};
 
 interface ForecastStage {
   id: string;
@@ -59,10 +54,39 @@ interface ForecastDriver {
 interface ForecastView {
   quantiles: { p25: number; p50: number; p80: number; p95: number };
   stages: ForecastStage[];
-  analysis: { taskClass: string; scopeScore?: number };
+  analysis: {
+    taskClass: TaskClass;
+    scope?: ScopeLevel;
+    scopeScore?: number;
+    ambiguity?: AmbiguityLevel;
+    signals?: {
+      tests?: boolean;
+      browser?: boolean;
+      external?: boolean;
+      deploy?: boolean;
+      destructive?: boolean;
+    };
+  };
   drivers: Array<ForecastDriver | string>;
   confidence: { level: string; score?: number } | string;
   calibration: { sampleCount?: number; multiplier?: number };
+}
+
+function ReturnWindowMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`return-window-mark ${className}`.trim()}
+      viewBox="0 0 64 32"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path className="mark-baseline" d="M5 16H59" />
+      <path className="mark-window" d="M9 16H44" />
+      <path className="mark-tail" d="M44 16H59" />
+      <circle className="mark-about" cx="29" cy="16" r="5" />
+      <path className="mark-allow" d="M44 6V26M44 6H49M44 26H49" />
+    </svg>
+  );
 }
 
 const STORAGE_KEY = 'agent-eta-calibration-v1';
@@ -136,7 +160,16 @@ const DEFAULT_PROMPT =
 function loadSamples(): WebCalibrationSample[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((candidate) => {
+      const result = toLocalRunInput(candidate);
+      if (!result.ok || result.value.actualMinutes === undefined) return [];
+      return [{
+        ...result.value,
+        actualMinutes: result.value.actualMinutes,
+        successful: result.value.successful === true,
+      }];
+    });
   } catch {
     return [];
   }
@@ -212,6 +245,10 @@ function ForecastRail({ forecast }: { forecast: ForecastView }) {
         className="rail-window"
         style={{ left: position(p25), width: `calc(${position(p80)} - ${position(p25)})` }}
       />
+      <div
+        className="rail-tail"
+        style={{ left: position(p80), width: `calc(${position(p95)} - ${position(p80)})` }}
+      />
       <div className="rail-marker rail-marker-p50" style={{ left: position(p50) }}>
         <span>about</span>
       </div>
@@ -240,6 +277,7 @@ function App() {
   const [samples, setSamples] = useState<WebCalibrationSample[]>(loadSamples);
   const [actualOpen, setActualOpen] = useState(false);
   const [actualMinutes, setActualMinutes] = useState('');
+  const [accountOpen, setAccountOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const directoryInput = useRef<HTMLInputElement>(null);
@@ -277,6 +315,7 @@ function App() {
   const confidenceLevel =
     typeof forecast.confidence === 'string' ? forecast.confidence : forecast.confidence.level;
   const supportsFast = MODELS[provider].find((item) => item.id === model)?.supportsFast ?? false;
+  const selectedModelLabel = MODELS[provider].find((item) => item.id === model)?.label ?? model;
 
   const driverItems = forecast.drivers.slice(0, 3).map((driver, index) => {
     if (typeof driver === 'string') return { label: driver, detail: '', impactMinutes: undefined, index };
@@ -311,7 +350,7 @@ function App() {
     window.setTimeout(() => setCopied(null), 1_600);
   }
 
-  function recordActual(event: React.FormEvent) {
+  async function recordActual(event: React.FormEvent) {
     event.preventDefault();
     const actual = Number(actualMinutes);
     if (!Number.isFinite(actual) || actual <= 0) return;
@@ -322,7 +361,15 @@ function App() {
       model,
       effort,
       speed,
-      taskClass: forecast.analysis.taskClass as TaskClass,
+      taskClass: forecast.analysis.taskClass,
+      ...(forecast.analysis.scope ? { scope: forecast.analysis.scope } : {}),
+      ...(forecast.analysis.ambiguity ? { ambiguity: forecast.analysis.ambiguity } : {}),
+      tests: forecast.analysis.signals?.tests === true,
+      browser: forecast.analysis.signals?.browser === true,
+      external: forecast.analysis.signals?.external === true,
+      deploy: forecast.analysis.signals?.deploy === true,
+      destructive: forecast.analysis.signals?.destructive === true,
+      estimatedP25Minutes: forecast.quantiles.p25,
       estimatedMinutes: forecast.quantiles.p50,
       estimatedP80Minutes: forecast.quantiles.p80,
       estimatedP95Minutes: forecast.quantiles.p95,
@@ -334,6 +381,20 @@ function App() {
     setActualOpen(false);
     setActualMinutes('');
     setToast('Run saved locally. Similar forecasts are now personalized.');
+
+    const { syncNewPrivateRun } = await import('./lib/supabase/sync');
+    const synced = await syncNewPrivateRun(sample);
+    if (synced.ok) {
+      if (synced.data.contribution.status === 'contributed') {
+        setToast('Run synced privately and added to grouped benchmarks.');
+      } else if (synced.data.contribution.status === 'failed') {
+        setToast('Run synced privately. Benchmark contribution needs a retry.');
+      } else {
+        setToast('Run saved locally and synced privately.');
+      }
+    } else if (synced.kind === 'remote' || synced.kind === 'validation') {
+      setToast('Run saved locally. Cloud sync is temporarily unavailable.');
+    }
   }
 
   function clearLocalHistory() {
@@ -348,12 +409,15 @@ function App() {
       <a className="skip-link" href="#estimator">Skip to estimator</a>
       <header className="site-header">
         <a className="wordmark" href="#top" aria-label="Agent ETA home">
-          <span className="wordmark-mark">A</span>
+          <ReturnWindowMark className="wordmark-mark" />
           <span>agent/eta</span>
         </a>
         <nav aria-label="Primary navigation">
           <a href="#method">Method</a>
           <a href="#install">Install</a>
+          <button className="nav-account" type="button" onClick={() => setAccountOpen(true)} aria-haspopup="dialog">
+            <LockKeyhole size={14} aria-hidden="true" /> Account
+          </button>
           <a className="nav-source" href="https://github.com/danielsinewe/AgentEstimate" target="_blank" rel="noreferrer">
             Source <ArrowUpRight size={14} aria-hidden="true" />
           </a>
@@ -366,6 +430,11 @@ function App() {
           <h1 id="hero-title">Know before<br /><em>you delegate.</em></h1>
           <p>Paste the job. Get a planning range. Your estimates learn from every run—locally.</p>
           <a className="hero-jump" href="#estimator">Build a forecast <span>↓</span></a>
+          <div className="hero-brand-mark" aria-hidden="true">
+            <ReturnWindowMark />
+            <span>About</span>
+            <span>Allow</span>
+          </div>
         </section>
 
         <section className="estimator-section" id="estimator" aria-label="Task duration estimator">
@@ -376,7 +445,7 @@ function App() {
                   <span className="section-number">01</span>
                   <h2>New forecast</h2>
                 </div>
-                <span className="privacy-note"><LockKeyhole size={14} /> Local only</span>
+                <span className="privacy-note"><LockKeyhole size={14} /> Local by default</span>
               </div>
 
               <label className="field-label" htmlFor="task-prompt">What are you handing off?</label>
@@ -412,96 +481,111 @@ function App() {
                 </div>
               </div>
 
-              <div className="config-row">
-                <label>
-                  <span className="field-label">Model</span>
-                  <select
-                    value={model}
-                    onChange={(event) => {
-                      const nextModel = event.target.value;
-                      setModel(nextModel);
-                      if (!MODELS[provider].find((item) => item.id === nextModel)?.supportsFast) setSpeed('standard');
-                    }}
-                  >
-                    {MODELS[provider].map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span className="field-label">Effort</span>
-                  <select value={effort} onChange={(event) => setEffort(event.target.value as Effort)}>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="xhigh">X-high</option>
-                    <option value="max">Max</option>
-                  </select>
-                </label>
-                <label>
-                  <span className="field-label">Speed</span>
-                  <select value={speed} onChange={(event) => setSpeed(event.target.value as SpeedMode)}>
-                    <option value="standard">Standard</option>
-                    <option value="fast" disabled={!supportsFast}>Fast</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="repo-block">
-                <div className="repo-heading">
-                  <div>
-                    <span className="field-label">Repository</span>
-                    <strong>{repo?.name || 'No repository profile'}</strong>
+              <details className="refine-panel">
+                <summary>
+                  <span>Refine estimate</span>
+                  <small>{selectedModelLabel} · {taskClassLabel(effort)}</small>
+                </summary>
+                <div className="refine-body">
+                  <div className="config-row">
+                    <label>
+                      <span className="field-label">Model</span>
+                      <select
+                        value={model}
+                        onChange={(event) => {
+                          const nextModel = event.target.value;
+                          setModel(nextModel);
+                          if (!MODELS[provider].find((item) => item.id === nextModel)?.supportsFast) setSpeed('standard');
+                        }}
+                      >
+                        {MODELS[provider].map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span className="field-label">Effort</span>
+                      <select value={effort} onChange={(event) => setEffort(event.target.value as Effort)}>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="xhigh">X-high</option>
+                        <option value="max">Max</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span className="field-label">Speed</span>
+                      <select value={speed} onChange={(event) => setSpeed(event.target.value as SpeedMode)}>
+                        <option value="standard">Standard</option>
+                        <option value="fast" disabled={!supportsFast}>Fast</option>
+                      </select>
+                    </label>
                   </div>
-                  <button className="folder-button" type="button" onClick={() => directoryInput.current?.click()} disabled={scanning}>
-                    <FolderOpen size={16} /> {scanning ? 'Reading…' : 'Choose folder'}
-                  </button>
-                  <input
-                    ref={directoryInput}
-                    className="visually-hidden"
-                    type="file"
-                    // @ts-expect-error Chromium directory selection is intentionally used when available.
-                    webkitdirectory=""
-                    multiple
-                    onChange={(event) => void handleFolder(event.target.files)}
-                    tabIndex={-1}
-                  />
-                </div>
-                <div className="repo-meta">
-                  <span>{repo?.files.toLocaleString() || 0} files</span>
-                  <span>{repo?.lines ? `${repo.locSampled ? '~' : ''}${Math.round(repo.lines / 1000)}k LOC` : 'LOC unknown'}</span>
-                  <span>{repo?.languages.slice(0, 2).join(' + ') || 'Any stack'}</span>
-                  <span>{repoSource}</span>
-                </div>
-                <div className="quick-repos" aria-label="Repository size presets">
-                  {QUICK_REPOS.map((item, index) => (
-                    <button key={item.label} type="button" onClick={() => selectQuickRepo(index)}>{item.label}</button>
-                  ))}
-                </div>
-                <p>Files are measured in your browser and never uploaded.</p>
-              </div>
 
-              <div className="scope-block">
-                <span className="field-label">Extra loops</span>
-                <div className="scope-flags">
-                  {(
-                    [
-                      ['tests', 'Tests'],
-                      ['browser', 'Browser'],
-                      ['external', 'External service'],
-                      ['deploy', 'Deploy'],
-                    ] as Array<[TaskFlag, string]>
-                  ).map(([key, label]) => (
-                    <button
-                      type="button"
-                      key={key}
-                      onClick={() => setFlags((current) => ({ ...current, [key]: !current[key] }))}
-                      className={flags[key] ? 'active' : ''}
-                      aria-pressed={flags[key]}
-                    >
-                      {flags[key] && <Check size={13} />} {label}
-                    </button>
-                  ))}
+                  <div className="repo-block">
+                    <div className="repo-heading">
+                      <div>
+                        <span className="field-label">Repository</span>
+                        <strong>{repo?.name || 'No repository profile'}</strong>
+                      </div>
+                      <button className="folder-button" type="button" onClick={() => directoryInput.current?.click()} disabled={scanning}>
+                        <FolderOpen size={16} /> {scanning ? 'Reading…' : 'Choose folder'}
+                      </button>
+                      <input
+                        ref={directoryInput}
+                        className="visually-hidden"
+                        type="file"
+                        // @ts-expect-error Chromium directory selection is intentionally used when available.
+                        webkitdirectory=""
+                        multiple
+                        onChange={(event) => void handleFolder(event.target.files)}
+                        tabIndex={-1}
+                      />
+                    </div>
+                    <div className="repo-meta">
+                      <span>{repo?.files.toLocaleString() || 0} files</span>
+                      <span>{repo?.lines ? `${repo.locSampled ? '~' : ''}${Math.round(repo.lines / 1000)}k LOC` : 'LOC unknown'}</span>
+                      <span>{repo?.languages.slice(0, 2).join(' + ') || 'Any stack'}</span>
+                      <span>{repoSource}</span>
+                    </div>
+                    <div className="quick-repos" aria-label="Repository size presets">
+                      {QUICK_REPOS.map((item, index) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => selectQuickRepo(index)}
+                          aria-pressed={repoSource === `${item.label} preset`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p>Measured here. Never uploaded.</p>
+                  </div>
+
+                  <div className="scope-block">
+                    <span className="field-label">Extra loops</span>
+                    <div className="scope-flags">
+                      {(
+                        [
+                          ['tests', 'Tests'],
+                          ['browser', 'Browser'],
+                          ['external', 'External service'],
+                          ['deploy', 'Deploy'],
+                        ] as Array<[TaskFlag, string]>
+                      ).map(([key, label]) => (
+                        <button
+                          type="button"
+                          key={key}
+                          onClick={() => setFlags((current) => ({ ...current, [key]: !current[key] }))}
+                          className={flags[key] ? 'active' : ''}
+                          aria-pressed={flags[key]}
+                        >
+                          {flags[key] && <Check size={13} />} {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </details>
             </div>
 
             <aside className="result-panel" aria-live="polite">
@@ -664,14 +748,24 @@ function App() {
       </main>
 
       <footer>
-        <a className="wordmark footer-wordmark" href="#top"><span className="wordmark-mark">A</span><span>agent/eta</span></a>
+        <a className="wordmark footer-wordmark" href="#top" aria-label="Agent ETA home"><ReturnWindowMark className="wordmark-mark" /><span>agent/eta</span></a>
         <p>Time forecasts for agents. No fake countdowns.</p>
         <div>
           <a href="https://github.com/danielsinewe/AgentEstimate" target="_blank" rel="noreferrer">GitHub</a>
           <a href="#method">Method</a>
-          <span>Local by default</span>
+          <button className="footer-account" type="button" onClick={() => setAccountOpen(true)} aria-haspopup="dialog">Privacy & account</button>
         </div>
       </footer>
+
+      {accountOpen && (
+        <Suspense fallback={<div className="account-loading-fallback" role="status">Opening private account…</div>}>
+          <CloudAccount
+            open
+            onClose={() => setAccountOpen(false)}
+            localRuns={samples}
+          />
+        </Suspense>
+      )}
 
       {actualOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setActualOpen(false)}>
@@ -679,7 +773,7 @@ function App() {
             <button className="modal-close" type="button" onClick={() => setActualOpen(false)} aria-label="Close"><X size={18} /></button>
             <span className="modal-kicker">Teach your ETA</span>
             <h2 id="actual-title">How long did it take?</h2>
-            <p>The prompt is not saved. Only the forecast, actual duration, and derived task features stay in this browser.</p>
+            <p>The prompt is never saved. Derived timing stays here unless you turned on private sync.</p>
             <form onSubmit={recordActual}>
               <label>
                 <span>Actual minutes</span>

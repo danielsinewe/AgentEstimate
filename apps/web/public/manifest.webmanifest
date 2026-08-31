@@ -1,7 +1,7 @@
 {
   "name": "Agent ETA",
   "short_name": "Agent ETA",
-  "description": "Completion-time forecasts for coding agents.",
+  "description": "Return-time forecasts for coding agents.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f2efe4",

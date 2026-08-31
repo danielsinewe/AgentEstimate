@@ -166,11 +166,15 @@ Raw prompts are processed in memory and are not copied into Agent ETA history. S
 - forecast quantiles, timestamps, elapsed duration, and outcome;
 - install-salted identifiers for runs, sessions, and repositories.
 
-The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. The CLI/plugin store defaults to `~/.agent-eta/runs.jsonl`, or `$XDG_DATA_HOME/agent-eta/runs.jsonl` when configured. Codex/Claude plugin data directories override that location; an explicit `AGENT_ETA_DATA_DIR` takes highest priority. On supported systems the directory is created with mode `0700` and the files with mode `0600`.
+The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. An account is optional. If you sign in and turn on private sync, only the allowlisted derived run fields are stored in your Supabase-backed account. Signing in or enabling sync never uploads existing browser history; that requires a separate, explicit import. Cloud history can be exported or deleted, including by deleting the account.
+
+Benchmark contribution is a second, independent opt-in for future completed runs. Contributions stay tied to your private account so you can retract them; raw rows are never public. A service-only aggregation can publish grouped results only after a cohort contains at least 25 runs from 20 distinct contributors. Prompts, code, repository names, paths, and individual runs are not part of the public dataset.
+
+The CLI/plugin store defaults to `~/.agent-eta/runs.jsonl`, or `$XDG_DATA_HOME/agent-eta/runs.jsonl` when configured. Codex/Claude plugin data directories override that location; an explicit `AGENT_ETA_DATA_DIR` takes highest priority. On supported systems the directory is created with mode `0700` and the files with mode `0600`.
 
 Hook payloads do not consistently expose the active model, effort, or speed setting. Agent ETA uses any values the host supplies and keeps fallback configuration out of the short user-facing forecast. For exact passive forecasts, set `AGENT_ETA_MODEL`, `AGENT_ETA_EFFORT`, and `AGENT_ETA_SPEED` (`standard` or `fast`) in the environment that launches Codex or Claude Code; `AGENT_ETA_PROVIDER` can be set to `codex` or `claude` when host detection is unavailable. `AGENT_ETA_STRICT=1` blocks a prompt only when no forecast can be produced.
 
-There is no product telemetry in the estimator, core engine, CLI, hooks, or MCP server.
+There is no passive product telemetry in the estimator, core engine, CLI, hooks, or MCP server. Benchmark contribution occurs only after the separate web opt-in described above.
 
 ## Development
 

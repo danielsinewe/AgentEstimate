@@ -13,3 +13,4 @@ coverage/
 !.env.example
 .agent-eta/
 .vercel/
+supabase/.temp/
