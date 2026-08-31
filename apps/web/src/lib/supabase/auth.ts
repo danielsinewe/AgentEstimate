@@ -46,7 +46,7 @@ export async function signInWithGitHub(
 
 async function consumeOAuthHash(
   client: NonNullable<ReturnType<typeof getSupabaseClient>>,
-): Promise<string | null> {
+): Promise<CloudResult<User> | null> {
   if (typeof window === 'undefined' || !window.location.hash) return null;
   const params = new URLSearchParams(window.location.hash.slice(1));
   const accessToken = params.get('access_token');
@@ -54,11 +54,15 @@ async function consumeOAuthHash(
   if (!accessToken || !refreshToken) return null;
 
   window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
-  const { error } = await client.auth.setSession({
+  const { data, error } = await client.auth.setSession({
     access_token: accessToken,
     refresh_token: refreshToken,
   });
-  return error?.message ?? null;
+  if (error) return remoteFailure(error.message);
+  if (!data.user) {
+    return { ok: false, kind: 'signed-out', message: 'GitHub sign-in did not return an account.' };
+  }
+  return { ok: true, data: data.user };
 }
 
 export async function signOut(environment?: SupabaseEnvironment): Promise<CloudResult<null>> {
@@ -74,8 +78,8 @@ export async function getAuthenticatedUser(
 ): Promise<CloudResult<User>> {
   const client = getSupabaseClient(environment);
   if (!client) return cloudUnavailable();
-  const callbackError = await consumeOAuthHash(client);
-  if (callbackError) return remoteFailure(callbackError);
+  const callbackResult = await consumeOAuthHash(client);
+  if (callbackResult) return callbackResult;
   const { data, error } = await client.auth.getUser();
   if (error && isAuthSessionMissingError(error)) {
     return { ok: false, kind: 'signed-out', message: 'Sign in to use private cloud data.' };
