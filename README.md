@@ -108,7 +108,7 @@ The build copies the runtime into the self-contained plugin bundle. Load it for 
 claude --plugin-dir "$PWD/plugins/agent-eta"
 ```
 
-Then send any prompt. The bundled skill, MCP server, and lifecycle hooks work together: the prompt-submit hook computes the return-time range, then gives the agent a privacy-safe developer instruction to show one short line—`⏱ About … · allow up to …`—before any other reply or tool call. If estimation fails, Agent ETA says so visibly and lets the prompt continue. Completion hooks record elapsed outcomes for local calibration.
+Then send any prompt. The bundled skill, MCP server, and lifecycle hooks work together: the prompt-submit hook computes the return-time range, then gives the agent a privacy-safe developer instruction to show one short line—`⏱ About … · allow up to …`—before any other reply or tool call. The final answer repeats that original forecast once so it remains visible after progress updates collapse. If estimation fails, Agent ETA says so visibly and lets the prompt continue. Completion hooks record elapsed outcomes for local calibration.
 
 After installing or updating the plugin, start a new session, open `/hooks`, and trust the reviewed Agent ETA hooks. Codex records trust against the exact hook version, so updates require one fresh review. Then send `Reply only OK`; the first line should begin with `⏱ About`. That canary verifies the plugin, hook, and first-response behavior together. If it only says `OK`, the hook is not active. `AGENTS.md`, `CLAUDE.md`, memory, skills, and MCP alone cannot provide the same lifecycle guarantee.
 

@@ -81,6 +81,13 @@ if (
 ) {
   throw new Error('Prompt-submit hook did not tell the agent to show the ETA first');
 }
+if (
+  !submitOutput.hookSpecificOutput.additionalContext.includes(
+    'In the final answer, show the same forecast line again, unchanged, prefixed by "Original ETA: ".',
+  )
+) {
+  throw new Error('Prompt-submit hook did not tell the agent to retain the ETA in the final answer');
+}
 if (submitOutput.hookSpecificOutput.additionalContext.includes(privatePromptMarker)) {
   throw new Error('Prompt-submit hook exposed private input in model-visible context');
 }
@@ -166,6 +173,7 @@ process.stdout.write(`${JSON.stringify({
   completionHookMs: completed.elapsedMs,
   systemMessage: submitOutput.systemMessage,
   firstResponseInstruction: true,
+  finalResponsePersistenceInstruction: true,
   unavailableVisible: true,
   strictModeBlocks: true,
   brokenRuntimeVisible: true,

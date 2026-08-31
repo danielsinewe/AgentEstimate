@@ -300,6 +300,9 @@ describe('hook lifecycle, visible failures, and privacy', () => {
       ),
     });
     expect(submit.hookSpecificOutput?.additionalContext.startsWith('<agent-eta-forecast>\n⏱ About')).toBe(true);
+    expect(submit.hookSpecificOutput?.additionalContext).toContain(
+      `In the final answer, show the same forecast line again, unchanged, prefixed by "Original ETA: ".`,
+    );
     expect(submit.hookSpecificOutput?.additionalContext.endsWith('</agent-eta-forecast>')).toBe(true);
     expect(submit.hookSpecificOutput?.additionalContext).not.toContain(secret);
     expect(submit.hookSpecificOutput?.additionalContext).not.toContain(cwd);

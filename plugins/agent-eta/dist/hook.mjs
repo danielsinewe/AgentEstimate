@@ -1886,6 +1886,7 @@ async function handleSubmit(input, options) {
         "<agent-eta-forecast>",
         forecastMessage,
         "Before any other commentary, answer, or tool call, show the forecast line above verbatim as the first user-visible response for this turn. Then continue with the request. Do not omit, paraphrase, or recalculate it.",
+        'In the final answer, show the same forecast line again, unchanged, prefixed by "Original ETA: ". This keeps the estimate visible after progress updates collapse.',
         "</agent-eta-forecast>"
       ].join("\n")
     }
