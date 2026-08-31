@@ -25,17 +25,18 @@ import {
   type SpeedMode,
   type TaskClass,
 } from '@agent-eta/core';
+import { ReturnWindowMark } from './Brand';
+import {
+  loadLocalHistory,
+  saveLocalHistory,
+  type WebCalibrationSample,
+} from './localHistory';
 import { scanRepository, type ScannedRepository } from './repoScanner';
-import { toLocalRunInput, type LocalRunInput } from './lib/supabase/validation';
 
 const CloudAccount = lazy(() => import('./CloudAccount'));
+const OverviewPage = lazy(() => import('./Overview'));
 
 type TaskFlag = 'tests' | 'browser' | 'external' | 'deploy';
-
-type WebCalibrationSample = LocalRunInput & {
-  actualMinutes: number;
-  successful: boolean;
-};
 
 interface ForecastStage {
   id: string;
@@ -71,25 +72,6 @@ interface ForecastView {
   confidence: { level: string; score?: number } | string;
   calibration: { sampleCount?: number; multiplier?: number };
 }
-
-function ReturnWindowMark({ className = '' }: { className?: string }) {
-  return (
-    <svg
-      className={`return-window-mark ${className}`.trim()}
-      viewBox="0 0 64 32"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path className="mark-baseline" d="M5 16H59" />
-      <path className="mark-window" d="M9 16H44" />
-      <path className="mark-tail" d="M44 16H59" />
-      <circle className="mark-about" cx="29" cy="16" r="5" />
-      <path className="mark-allow" d="M44 6V26M44 6H49M44 26H49" />
-    </svg>
-  );
-}
-
-const STORAGE_KEY = 'agent-eta-calibration-v1';
 
 const MODELS: Record<Provider, Array<{ id: string; label: string; supportsFast: boolean }>> = {
   codex: [
@@ -156,24 +138,6 @@ const QUICK_REPOS: Array<{ label: string; profile: ScannedRepository }> = [
 
 const DEFAULT_PROMPT =
   'Add Google sign-in, test the complete flow in the browser, and deploy it to production.';
-
-function loadSamples(): WebCalibrationSample[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((candidate) => {
-      const result = toLocalRunInput(candidate);
-      if (!result.ok || result.value.actualMinutes === undefined) return [];
-      return [{
-        ...result.value,
-        actualMinutes: result.value.actualMinutes,
-        successful: result.value.successful === true,
-      }];
-    });
-  } catch {
-    return [];
-  }
-}
 
 function toClock(minutesFromNow: number): string {
   const time = new Date(Date.now() + Math.max(0, minutesFromNow) * 60_000);
@@ -259,7 +223,7 @@ function ForecastRail({ forecast }: { forecast: ForecastView }) {
   );
 }
 
-function App() {
+function EstimatorApp() {
   const [provider, setProvider] = useState<Provider>('codex');
   const [model, setModel] = useState(MODELS.codex[0]!.id);
   const [effort, setEffort] = useState<Effort>('high');
@@ -274,7 +238,7 @@ function App() {
     external: false,
     deploy: false,
   });
-  const [samples, setSamples] = useState<WebCalibrationSample[]>(loadSamples);
+  const [samples, setSamples] = useState<WebCalibrationSample[]>(loadLocalHistory);
   const [actualOpen, setActualOpen] = useState(false);
   const [actualMinutes, setActualMinutes] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
@@ -295,7 +259,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(samples));
+    saveLocalHistory(samples);
   }, [samples]);
 
   useEffect(() => {
@@ -387,6 +351,7 @@ function App() {
       estimatedP95Minutes: forecast.quantiles.p95,
       actualMinutes: actual,
       successful: true,
+      historySource: 'web',
       createdAt: new Date().toISOString(),
     };
     setSamples((current) => [...current, sample]);
@@ -425,6 +390,7 @@ function App() {
           <span>agent/eta</span>
         </a>
         <nav aria-label="Primary navigation">
+          <a href="/overview">Overview</a>
           <a href="#method">Method</a>
           <a href="#install">Install</a>
           <button className="nav-account" type="button" onClick={() => setAccountOpen(true)} aria-haspopup="dialog">
@@ -805,6 +771,12 @@ function App() {
       )}
     </div>
   );
+}
+
+function App() {
+  return window.location.pathname.replace(/\/+$/u, '') === '/overview'
+    ? <Suspense fallback={<div className="overview-route-loading" role="status">Opening your runs…</div>}><OverviewPage /></Suspense>
+    : <EstimatorApp />;
 }
 
 export default App;

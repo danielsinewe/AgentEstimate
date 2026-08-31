@@ -22,7 +22,7 @@
 
 | Surface | Best for | Persists raw prompts or code? |
 | --- | --- | --- |
-| [Web](https://agentestimate.vercel.app) | A quick visual estimate and browser-local calibration | No |
+| [Web](https://agentestimate.vercel.app) | A quick visual estimate, browser-local calibration, and private [run overview](https://agentestimate.vercel.app/overview) | No |
 | CLI | Scripts, terminals, and JSON output | No |
 | MCP | Letting Codex or Claude Code request an estimate | No |
 | Plugin + hooks | Automatic forecasts and calibration at task boundaries | No |
@@ -33,6 +33,8 @@
 The hosted estimator needs no account:
 
 **[Open Agent ETA →](https://agentestimate.vercel.app)**
+
+The **Overview** compares each original ETA with actual time and reports planning-range coverage and median error. Plugin users can import the privacy-safe local `runs.jsonl`; raw prompts and repository identities are never added to browser or cloud history.
 
 To run every surface from source, use Node.js 24 or newer:
 
