@@ -76,7 +76,10 @@ export function bootstrapOAuthCallback(
   }
   const client = getSupabaseClient(environment);
   if (!client) return Promise.resolve(cloudUnavailable());
-  oauthCallbackResult ??= consumeOAuthHash(client);
+  oauthCallbackResult ??= consumeOAuthHash(client).then((result) => {
+    if (result?.ok) currentPageUser = result.data;
+    return result;
+  });
   return oauthCallbackResult;
 }
 
