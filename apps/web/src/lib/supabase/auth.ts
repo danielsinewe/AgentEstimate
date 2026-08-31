@@ -8,6 +8,7 @@ import {
 import {
   cloudUnavailable,
   getSupabaseClient,
+  readSupabaseConfiguration,
   remoteFailure,
   type CloudResult,
   type SupabaseEnvironment,
@@ -29,19 +30,35 @@ export async function signInWithGitHub(
   redirectTo?: string,
   environment?: SupabaseEnvironment,
 ): Promise<CloudResult<{ redirectUrl: string | null }>> {
-  const client = getSupabaseClient(environment);
-  if (!client) return cloudUnavailable();
+  const configuration = readSupabaseConfiguration(environment);
+  if (!configuration) return cloudUnavailable();
 
-  const { data, error } = await client.auth.signInWithOAuth({
+  const params = new URLSearchParams({
     provider: 'github',
-    options: {
-      redirectTo: sameOriginRedirect(redirectTo),
-      scopes: 'read:user user:email',
-      skipBrowserRedirect: true,
-    },
+    redirect_to: sameOriginRedirect(redirectTo) ?? configuration.url,
+    scopes: 'read:user user:email',
   });
-  if (error) return remoteFailure(error.message);
-  return { ok: true, data: { redirectUrl: data.url } };
+  return {
+    ok: true,
+    data: { redirectUrl: `${configuration.url}/auth/v1/authorize?${params.toString()}` },
+  };
+}
+
+async function consumeOAuthHash(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+): Promise<string | null> {
+  if (typeof window === 'undefined' || !window.location.hash) return null;
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  if (!accessToken || !refreshToken) return null;
+
+  window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+  const { error } = await client.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+  return error?.message ?? null;
 }
 
 export async function signOut(environment?: SupabaseEnvironment): Promise<CloudResult<null>> {
@@ -57,6 +74,8 @@ export async function getAuthenticatedUser(
 ): Promise<CloudResult<User>> {
   const client = getSupabaseClient(environment);
   if (!client) return cloudUnavailable();
+  const callbackError = await consumeOAuthHash(client);
+  if (callbackError) return remoteFailure(callbackError);
   const { data, error } = await client.auth.getUser();
   if (error && isAuthSessionMissingError(error)) {
     return { ok: false, kind: 'signed-out', message: 'Sign in to use private cloud data.' };
