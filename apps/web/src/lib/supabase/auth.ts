@@ -104,8 +104,8 @@ export async function getAuthenticatedUser(
     return callbackResult;
   }
   const { data, error } = await client.auth.getUser();
+  if (error && currentPageUser) return { ok: true, data: currentPageUser };
   if (error && isAuthSessionMissingError(error)) {
-    if (currentPageUser) return { ok: true, data: currentPageUser };
     return { ok: false, kind: 'signed-out', message: 'Sign in to use private cloud data.' };
   }
   if (error) return remoteFailure(error.message);
