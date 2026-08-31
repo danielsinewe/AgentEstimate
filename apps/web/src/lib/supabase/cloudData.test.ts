@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { parsePublicDashboardSnapshot } from './benchmarks';
 import { isCloudDataConfigured, readSupabaseConfiguration } from './runtime';
+import type { PublicDashboardSnapshotRow } from './types';
 import { toLocalRunInput, toPrivateRunInsert } from './validation';
 
 const validRun = {
@@ -83,5 +85,39 @@ describe('private run allowlist', () => {
       ok: false,
       error: 'Run durations are invalid.',
     });
+  });
+});
+
+describe('public dashboard snapshot boundary', () => {
+  const publicSnapshot = {
+    snapshot_key: 'main',
+    total_runs: 41,
+    successful_runs: 34,
+    stopped_runs: 7,
+    failed_runs: 0,
+    measured_runs: 32,
+    within_p80_runs: 30,
+    p80_coverage: 0.9375,
+    median_actual_minutes: 7.805,
+    median_absolute_error_minutes: 9.653,
+    provider_breakdown: [{ provider: 'codex', totalRuns: 40, successfulRuns: 33 }],
+    task_breakdown: [{ taskClass: 'feature', totalRuns: 22, successfulRuns: 17, medianActualMinutes: 9.025 }],
+    period_start: '2026-08-28T13:35:04.929Z',
+    period_end: '2026-08-31T10:10:29.310Z',
+    generated_at: '2026-08-31T13:34:59.646Z',
+  } satisfies PublicDashboardSnapshotRow;
+
+  it('accepts aggregate provider and task arrays without account or run identifiers', () => {
+    const result = parsePublicDashboardSnapshot(publicSnapshot);
+    expect(result).toEqual(publicSnapshot);
+    expect(result).not.toHaveProperty('user_id');
+    expect(result).not.toHaveProperty('client_run_id');
+  });
+
+  it('rejects malformed public breakdown rows', () => {
+    expect(parsePublicDashboardSnapshot({
+      ...publicSnapshot,
+      provider_breakdown: [{ provider: 'unknown', totalRuns: 41, successfulRuns: 34 }],
+    })).toBeNull();
   });
 });

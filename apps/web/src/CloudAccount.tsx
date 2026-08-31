@@ -339,8 +339,8 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
         ) : !user ? (
           <section className="cloud-sign-in" aria-label="Sign in">
             <div className="cloud-sign-in-mark"><LockKeyhole size={22} /></div>
-            <h3>Keep forecasts private</h3>
-            <p>Sign in only if you want private history across devices. The estimator works without an account.</p>
+            <h3>Keep your runs private</h3>
+            <p>Sign in only if you want private history across devices. The public dashboard works without an account.</p>
             <button
               className="cloud-button cloud-button-primary"
               type="button"

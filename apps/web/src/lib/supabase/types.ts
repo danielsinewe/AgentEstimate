@@ -18,6 +18,19 @@ export type RunOutcome = 'started' | 'success' | 'failed' | 'censored';
 export type RunSource = 'web' | 'plugin' | 'import';
 export type MetricDimension = 'overall' | 'provider' | 'provider_model' | 'provider_model_task';
 
+export interface PublicProviderBreakdown {
+  provider: RunProvider;
+  totalRuns: number;
+  successfulRuns: number;
+}
+
+export interface PublicTaskBreakdown {
+  taskClass: RunTaskClass;
+  totalRuns: number;
+  successfulRuns: number;
+  medianActualMinutes: number | null;
+}
+
 export interface Database {
   __InternalSupabase: {
     PostgrestVersion: '14.5';
@@ -286,6 +299,28 @@ export interface Database {
         };
         Relationships: [];
       };
+      public_dashboard_snapshots: {
+        Row: {
+          snapshot_key: string;
+          total_runs: number;
+          successful_runs: number;
+          stopped_runs: number;
+          failed_runs: number;
+          measured_runs: number;
+          within_p80_runs: number;
+          p80_coverage: number;
+          median_actual_minutes: number;
+          median_absolute_error_minutes: number;
+          provider_breakdown: Json;
+          task_breakdown: Json;
+          period_start: string;
+          period_end: string;
+          generated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -312,3 +347,12 @@ export type PrivateRunInsert = Database['project_agent_eta_v2']['Tables']['priva
 export type SyncSettingsRow = Database['project_agent_eta_v2']['Tables']['user_sync_settings']['Row'];
 export type ContributionRow = Database['project_agent_eta_v2']['Tables']['benchmark_contributions']['Row'];
 export type PublicMetricSnapshot = Database['project_agent_eta_v2']['Tables']['public_metric_snapshots']['Row'];
+export type PublicDashboardSnapshotRow = Database['project_agent_eta_v2']['Tables']['public_dashboard_snapshots']['Row'];
+
+export type PublicDashboardSnapshot = Omit<
+  PublicDashboardSnapshotRow,
+  'provider_breakdown' | 'task_breakdown'
+> & {
+  provider_breakdown: PublicProviderBreakdown[];
+  task_breakdown: PublicTaskBreakdown[];
+};

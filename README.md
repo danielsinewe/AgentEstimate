@@ -6,7 +6,7 @@
 
 **Know before you delegate.** Agent ETA gives Codex and Claude Code tasks an honest time range, explains what is driving it, and learns from completed runs without sending prompts or source code to an analytics service.
 
-[Try the web estimator](https://agentestimate.vercel.app) · [Read the methodology](docs/research.md) · [View the source](https://github.com/danielsinewe/AgentEstimate)
+[View the public dashboard](https://agentestimate.vercel.app) · [Read the methodology](docs/research.md) · [View the source](https://github.com/danielsinewe/AgentEstimate)
 
 > Agent ETA is a planning forecast, not a deadline, progress bar, or correctness guarantee. It predicts when the agent is likely to return control.
 
@@ -22,7 +22,7 @@
 
 | Surface | Best for | Persists raw prompts or code? |
 | --- | --- | --- |
-| [Web](https://agentestimate.vercel.app) | A quick visual estimate, browser-local calibration, and private [run overview](https://agentestimate.vercel.app/overview) | No |
+| [Web](https://agentestimate.vercel.app) | Public aggregate timing dashboard and private [run overview](https://agentestimate.vercel.app/overview) | No |
 | CLI | Scripts, terminals, and JSON output | No |
 | MCP | Letting Codex or Claude Code request an estimate | No |
 | Plugin + hooks | Automatic forecasts and calibration at task boundaries | No |
@@ -30,9 +30,9 @@
 
 ## Quick start
 
-The hosted estimator needs no account:
+The public aggregate dashboard needs no account:
 
-**[Open Agent ETA →](https://agentestimate.vercel.app)**
+**[Open the Agent ETA dashboard →](https://agentestimate.vercel.app)**
 
 The **Overview** compares each original ETA with actual time and reports planning-range coverage and median error. Plugin users can import the privacy-safe local `runs.jsonl`; raw prompts and repository identities are never added to browser or cloud history.
 
@@ -172,11 +172,13 @@ The web app stores derived calibration samples in that browser's `localStorage` 
 
 Benchmark contribution is a second, independent opt-in for future completed runs. Contributions stay tied to your private account so you can retract them; raw rows are never public. A service-only aggregation can publish grouped results only after a cohort contains at least 25 runs from 20 distinct contributors. Prompts, code, repository names, paths, and individual runs are not part of the public dataset.
 
+The landing-page dashboard is a separate owner-published snapshot. Only explicitly enabled owners are included, and the public table contains aggregate counts, medians, coverage, and task/provider breakdowns—never user IDs, run IDs, or individual records.
+
 The CLI/plugin store defaults to `~/.agent-eta/runs.jsonl`, or `$XDG_DATA_HOME/agent-eta/runs.jsonl` when configured. Codex/Claude plugin data directories override that location; an explicit `AGENT_ETA_DATA_DIR` takes highest priority. On supported systems the directory is created with mode `0700` and the files with mode `0600`.
 
 Hook payloads do not consistently expose the active model, effort, or speed setting. Agent ETA uses any values the host supplies and keeps fallback configuration out of the short user-facing forecast. For exact passive forecasts, set `AGENT_ETA_MODEL`, `AGENT_ETA_EFFORT`, and `AGENT_ETA_SPEED` (`standard` or `fast`) in the environment that launches Codex or Claude Code; `AGENT_ETA_PROVIDER` can be set to `codex` or `claude` when host detection is unavailable. `AGENT_ETA_STRICT=1` blocks a prompt only when no forecast can be produced.
 
-There is no passive product telemetry in the estimator, core engine, CLI, hooks, or MCP server. Benchmark contribution occurs only after the separate web opt-in described above.
+There is no passive product telemetry in the web app, core engine, CLI, hooks, or MCP server. Benchmark contribution occurs only after the separate web opt-in described above.
 
 ## Development
 
@@ -192,7 +194,7 @@ npm run check        # complete release gate
 Repository layout:
 
 ```text
-apps/web/                 Visual estimator
+apps/web/                 Public dashboard and private run overview
 packages/core/            Pure forecasting and calibration engine
 packages/integration/     CLI, hooks, repository profiler, history, and MCP
 plugins/agent-eta/        Codex/Claude Code plugin bundle

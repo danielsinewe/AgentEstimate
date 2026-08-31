@@ -10,6 +10,6 @@
     <path d="M62 2v36m0-36h9m-9 36h9" fill="none" stroke="#fffdf5" stroke-width="4" stroke-linecap="round"/>
   </g>
   <text x="265" y="170" fill="#f2efe4" font-family="monospace" font-size="28" letter-spacing="3">AGENT ETA</text>
-  <text x="150" y="350" fill="#f2efe4" font-family="Georgia,serif" font-size="112">Know before</text>
-  <text x="150" y="458" fill="#d9ff57" font-family="Georgia,serif" font-size="112" font-style="italic">you delegate.</text>
+  <text x="150" y="350" fill="#f2efe4" font-family="Georgia,serif" font-size="112">The clock, after</text>
+  <text x="150" y="458" fill="#d9ff57" font-family="Georgia,serif" font-size="112" font-style="italic">the promise.</text>
 </svg>

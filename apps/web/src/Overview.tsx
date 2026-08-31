@@ -180,7 +180,7 @@ export default function OverviewPage() {
           <span>agent/eta</span>
         </a>
         <nav aria-label="Overview navigation">
-          <a href="/">New forecast</a>
+          <a href="/">Public dashboard</a>
           <button className="nav-account" type="button" onClick={() => setAccountOpen(true)}>
             <LockKeyhole size={14} aria-hidden="true" /> {userLabel(user)}
           </button>
@@ -204,7 +204,7 @@ export default function OverviewPage() {
             <button className="overview-import" type="button" onClick={() => importInput.current?.click()}>
               <ArrowDownToLine size={16} /> Import plugin history
             </button>
-            <a className="overview-new" href="/#estimator">New forecast <ArrowRight size={16} /></a>
+            <a className="overview-new" href="/">Public dashboard <ArrowRight size={16} /></a>
           </div>
         </section>
 
@@ -295,7 +295,7 @@ export default function OverviewPage() {
       <footer className="overview-footer">
         <a className="wordmark footer-wordmark" href="/"><ReturnWindowMark className="wordmark-mark" /><span>agent/eta</span></a>
         <p>Original estimate. Actual time. Better next run.</p>
-        <a href="/">Back to estimator</a>
+        <a href="/">Public dashboard</a>
       </footer>
 
       {accountOpen && (
