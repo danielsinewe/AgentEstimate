@@ -14,6 +14,8 @@ import {
   type SupabaseEnvironment,
 } from './runtime';
 
+let currentPageUser: User | null = null;
+
 function sameOriginRedirect(requested?: string): string | undefined {
   if (typeof window === 'undefined') return undefined;
   const fallback = new URL('/', window.location.origin).toString();
@@ -70,6 +72,7 @@ export async function signOut(environment?: SupabaseEnvironment): Promise<CloudR
   if (!client) return cloudUnavailable();
   const { error } = await client.auth.signOut({ scope: 'local' });
   if (error) return remoteFailure(error.message);
+  currentPageUser = null;
   return { ok: true, data: null };
 }
 
@@ -79,15 +82,20 @@ export async function getAuthenticatedUser(
   const client = getSupabaseClient(environment);
   if (!client) return cloudUnavailable();
   const callbackResult = await consumeOAuthHash(client);
-  if (callbackResult) return callbackResult;
+  if (callbackResult) {
+    if (callbackResult.ok) currentPageUser = callbackResult.data;
+    return callbackResult;
+  }
   const { data, error } = await client.auth.getUser();
   if (error && isAuthSessionMissingError(error)) {
+    if (currentPageUser) return { ok: true, data: currentPageUser };
     return { ok: false, kind: 'signed-out', message: 'Sign in to use private cloud data.' };
   }
   if (error) return remoteFailure(error.message);
   if (!data.user) {
     return { ok: false, kind: 'signed-out', message: 'Sign in to use private cloud data.' };
   }
+  currentPageUser = data.user;
   return { ok: true, data: data.user };
 }
 
@@ -97,5 +105,8 @@ export function subscribeToAuth(
 ): Subscription | null {
   const client = getSupabaseClient(environment);
   if (!client) return null;
-  return client.auth.onAuthStateChange(listener).data.subscription;
+  return client.auth.onAuthStateChange((event, session) => {
+    currentPageUser = session?.user ?? null;
+    listener(event, session);
+  }).data.subscription;
 }
