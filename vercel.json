@@ -17,7 +17,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/overview", "destination": "/index.html" },
-    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/" }
   ]
 }
