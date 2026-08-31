@@ -283,6 +283,12 @@ function App() {
   const directoryInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash.includes('access_token=') || !hash.includes('refresh_token=')) return;
+    void import('./lib/supabase/auth').then(({ getAuthenticatedUser }) => getAuthenticatedUser());
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(samples));
   }, [samples]);
 

@@ -84,7 +84,7 @@ export function getSupabaseClient(
     db: { schema: AGENT_ETA_DATABASE_SCHEMA },
     auth: {
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false,
       flowType: 'implicit',
       persistSession: true,
       storageKey: 'agent-eta-auth-v1',
