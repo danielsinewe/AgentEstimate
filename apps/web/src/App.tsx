@@ -286,7 +286,11 @@ function App() {
     const hash = window.location.hash;
     if (!hash.includes('access_token=') || !hash.includes('refresh_token=')) return;
     void import('./lib/supabase/auth').then(({ bootstrapOAuthCallback }) => {
-      void bootstrapOAuthCallback();
+      const callback = bootstrapOAuthCallback();
+      if (!callback) return;
+      void callback.then((result) => {
+        if (result && !result.ok) setToast(result.message);
+      });
     });
   }, []);
 
