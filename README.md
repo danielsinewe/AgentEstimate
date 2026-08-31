@@ -166,7 +166,7 @@ Raw prompts are processed in memory and are not copied into Agent ETA history. S
 - forecast quantiles, timestamps, elapsed duration, and outcome;
 - install-salted identifiers for runs, sessions, and repositories.
 
-The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. An account is optional. If you sign in and turn on private sync, only the allowlisted derived run fields are stored in your Supabase-backed account. Signing in or enabling sync never uploads existing browser history; that requires a separate, explicit import. Cloud history can be exported or deleted, including by deleting the account.
+The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. An account is optional. If you sign in and turn on private sync, only the allowlisted derived run fields are stored in Agent ETA's isolated schema in the shared Supabase project. Signing in or enabling sync never uploads existing browser history; that requires a separate, explicit import. Cloud history can be exported or deleted, and deleting Agent ETA data never deletes the shared login identity.
 
 Benchmark contribution is a second, independent opt-in for future completed runs. Contributions stay tied to your private account so you can retract them; raw rows are never public. A service-only aggregation can publish grouped results only after a cohort contains at least 25 runs from 20 distinct contributors. Prompts, code, repository names, paths, and individual runs are not part of the public dataset.
 

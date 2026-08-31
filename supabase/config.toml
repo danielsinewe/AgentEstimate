@@ -3,8 +3,8 @@ project_id = "agent-estimate"
 [api]
 enabled = true
 port = 54321
-schemas = ["public", "graphql_public"]
-extra_search_path = ["public", "extensions"]
+schemas = ["public", "graphql_public", "project_agent_eta_v2"]
+extra_search_path = ["public", "extensions", "project_agent_eta_v2"]
 max_rows = 1000
 
 [db]
@@ -57,8 +57,3 @@ enabled = true
 client_id = "env(SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET)"
 redirect_uri = ""
-
-[functions.delete-account]
-enabled = true
-verify_jwt = true
-entrypoint = "./functions/delete-account/index.ts"

@@ -12,11 +12,11 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ACCOUNT_DELETION_CONFIRMATION,
+  AGENT_ETA_DATA_DELETION_CONFIRMATION,
   BENCHMARK_CONSENT_VERSION,
   LOCAL_HISTORY_IMPORT_DECISION,
   deleteAllPrivateRuns,
-  deleteAccount as deleteCloudAccount,
+  deleteAgentEtaData,
   deletePrivateRun,
   getAuthenticatedUser,
   getSyncSettings,
@@ -292,12 +292,12 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
     setError(null);
     const result = deleteAccount
       ? await deleteAccount()
-      : await deleteCloudAccount(ACCOUNT_DELETION_CONFIRMATION);
+      : await deleteAgentEtaData(AGENT_ETA_DATA_DELETION_CONFIRMATION);
     if (!result.ok) setError(result.message);
     else {
       setUser(null);
       setCloudRuns([]);
-      setNotice('Account deleted. Local browser history was kept.');
+      setNotice('Agent ETA data deleted. Your shared sign-in remains available elsewhere.');
     }
     setConfirmDeleteAccount(false);
     setBusy(null);
@@ -488,8 +488,8 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
 
             <section className="cloud-account-danger" aria-labelledby="delete-account-title">
               <div>
-                <h3 id="delete-account-title">Delete account</h3>
-                <p>Deletes cloud data and contributions. Local browser history stays here.</p>
+                <h3 id="delete-account-title">Delete Agent ETA data</h3>
+                <p>Deletes this app’s cloud data. Your shared sign-in and local history stay.</p>
               </div>
               <div className="cloud-confirm-actions">
                 {confirmDeleteAccount && (
@@ -501,7 +501,7 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
                   onClick={() => void handleDeleteAccount()}
                   disabled={busy !== null}
                 >
-                  {confirmDeleteAccount ? 'Confirm delete account' : 'Delete account'}
+                  {confirmDeleteAccount ? 'Confirm delete data' : 'Delete Agent ETA data'}
                 </button>
               </div>
             </section>

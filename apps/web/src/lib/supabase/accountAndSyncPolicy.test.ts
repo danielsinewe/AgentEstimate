@@ -1,64 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ACCOUNT_DELETION_CONFIRMATION,
-  deleteAccount,
-  isRecentServerVerifiedAuthentication,
-  RECENT_AUTHENTICATION_MAX_AGE_MS,
-  type AccountDeletionConfirmation,
+  AGENT_ETA_DATA_DELETION_CONFIRMATION,
+  deleteAgentEtaData,
+  type AgentEtaDataDeletionConfirmation,
 } from './account';
 import { planAutomaticContribution } from './sync';
 
-describe('account deletion helper', () => {
+describe('Agent ETA data deletion helper', () => {
   it('requires the exact destructive confirmation before looking for cloud config', async () => {
-    await expect(deleteAccount('wrong-confirmation' as AccountDeletionConfirmation, {})).resolves.toEqual({
+    await expect(deleteAgentEtaData('wrong-confirmation' as AgentEtaDataDeletionConfirmation, {})).resolves.toEqual({
       ok: false,
       kind: 'validation',
-      message: 'Confirm account deletion before continuing.',
+      message: 'Confirm Agent ETA data deletion before continuing.',
     });
   });
 
   it('fails locally and safely when cloud data is not configured', async () => {
-    await expect(deleteAccount(ACCOUNT_DELETION_CONFIRMATION, {})).resolves.toEqual({
+    await expect(deleteAgentEtaData(AGENT_ETA_DATA_DELETION_CONFIRMATION, {})).resolves.toEqual({
       ok: false,
       kind: 'not-configured',
       message: 'Cloud data is not configured. Agent ETA will keep working locally.',
     });
-  });
-});
-
-describe('recent authentication preflight', () => {
-  const nowMs = Date.parse('2026-08-30T10:00:00.000Z');
-
-  it('accepts a fresh server-verified sign-in through the exact ten-minute boundary', () => {
-    expect(isRecentServerVerifiedAuthentication('2026-08-30T09:59:00.000Z', nowMs)).toBe(true);
-    expect(isRecentServerVerifiedAuthentication(
-      new Date(nowMs - RECENT_AUTHENTICATION_MAX_AGE_MS).toISOString(),
-      nowMs,
-    )).toBe(true);
-  });
-
-  it('rejects an old sign-in', () => {
-    expect(isRecentServerVerifiedAuthentication(
-      new Date(nowMs - RECENT_AUTHENTICATION_MAX_AGE_MS - 1).toISOString(),
-      nowMs,
-    )).toBe(false);
-  });
-
-  it.each([undefined, null, ''])('rejects a missing sign-in timestamp: %s', (value) => {
-    expect(isRecentServerVerifiedAuthentication(value, nowMs)).toBe(false);
-  });
-
-  it.each([
-    'not-a-date',
-    '2026-13-99T99:99:99Z',
-    '2026-08-30',
-    'August 30, 2026 09:59:00 GMT',
-  ])('rejects malformed timestamp: %s', (value) => {
-    expect(isRecentServerVerifiedAuthentication(value, nowMs)).toBe(false);
-  });
-
-  it('rejects a future timestamp instead of accepting clock ambiguity', () => {
-    expect(isRecentServerVerifiedAuthentication('2026-08-30T10:00:00.001Z', nowMs)).toBe(false);
   });
 });
 

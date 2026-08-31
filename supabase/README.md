@@ -1,5 +1,7 @@
 # Agent ETA Supabase foundation
 
+Production uses the shared Supabase project `qrdgyonmrznmrauyiesn` and the isolated `project_agent_eta_v2` schema. The active migration directory mirrors the Agent ETA migrations recorded in that shared project's global migration history. The retired standalone project's original `public`-schema migrations are preserved under `legacy-migrations/` and must not be pushed to the shared database.
+
 The migration keeps the estimator useful without an account and makes cloud features explicitly opt-in:
 
 - `private_runs` stores only derived run fields for the signed-in owner.
@@ -21,7 +23,7 @@ npx --yes supabase@latest db lint --local
 
 GitHub auth is disabled in local config until credentials are supplied. Set `SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID` and `SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET`, then enable the provider in `config.toml` for local OAuth testing. Configure the production callback URL in the Supabase dashboard; do not commit either secret.
 
-The `delete-account` Edge Function hard-deletes only the authenticated caller. It verifies the bearer token again inside the function and requires the verified Auth user’s `last_sign_in_at` to be no more than 10 minutes old. Missing, malformed, future, or older timestamps fail closed with `reauth_required`; refreshing a token does not count as signing in again. The browser mirrors this preflight, but the Edge Function is authoritative. A user who misses the window must sign out and back in with GitHub before confirming deletion again.
+`delete_agent_eta_data()` deletes only the authenticated caller’s Agent ETA rows. The shared Supabase Auth identity is preserved so account deletion in this product cannot affect another product using the same database.
 
 The function keeps the service-role key server-side and accepts browser requests only from exact origins in `AGENT_ETA_ALLOWED_ORIGINS`. For local serving, supply a comma-separated allowlist without paths or trailing slashes, for example `http://localhost:5173,http://127.0.0.1:5173`.
 
@@ -33,7 +35,6 @@ Link the intended Supabase project and apply the migration through the normal mi
 npx --yes supabase@latest link --project-ref YOUR_PROJECT_REF
 npx --yes supabase@latest db push
 npx --yes supabase@latest secrets set AGENT_ETA_ALLOWED_ORIGINS=https://YOUR_EXACT_APP_ORIGIN
-npx --yes supabase@latest functions deploy delete-account
 ```
 
 The web app uses only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Never place a service-role key in a `VITE_` variable. A trusted server or scheduled job should call `refresh_agent_eta_public_metrics`; the function is executable only by `service_role`.
