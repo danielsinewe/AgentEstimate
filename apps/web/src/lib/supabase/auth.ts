@@ -15,6 +15,7 @@ import {
 } from './runtime';
 
 let currentPageUser: User | null = null;
+let oauthCallbackResult: Promise<CloudResult<User> | null> | null = null;
 
 function sameOriginRedirect(requested?: string): string | undefined {
   if (typeof window === 'undefined') return undefined;
@@ -67,6 +68,18 @@ async function consumeOAuthHash(
   return { ok: true, data: data.user };
 }
 
+export function bootstrapOAuthCallback(
+  environment?: SupabaseEnvironment,
+): Promise<CloudResult<User> | null> | null {
+  if (typeof window === 'undefined' || !window.location.hash.includes('access_token=')) {
+    return null;
+  }
+  const client = getSupabaseClient(environment);
+  if (!client) return Promise.resolve(cloudUnavailable());
+  oauthCallbackResult ??= consumeOAuthHash(client);
+  return oauthCallbackResult;
+}
+
 export async function signOut(environment?: SupabaseEnvironment): Promise<CloudResult<null>> {
   const client = getSupabaseClient(environment);
   if (!client) return cloudUnavailable();
@@ -81,7 +94,8 @@ export async function getAuthenticatedUser(
 ): Promise<CloudResult<User>> {
   const client = getSupabaseClient(environment);
   if (!client) return cloudUnavailable();
-  const callbackResult = await consumeOAuthHash(client);
+  const pendingCallback = oauthCallbackResult ?? bootstrapOAuthCallback(environment);
+  const callbackResult = pendingCallback ? await pendingCallback : null;
   if (callbackResult) {
     if (callbackResult.ok) currentPageUser = callbackResult.data;
     return callbackResult;

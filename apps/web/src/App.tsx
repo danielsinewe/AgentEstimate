@@ -285,7 +285,9 @@ function App() {
   useEffect(() => {
     const hash = window.location.hash;
     if (!hash.includes('access_token=') || !hash.includes('refresh_token=')) return;
-    void import('./lib/supabase/auth').then(({ getAuthenticatedUser }) => getAuthenticatedUser());
+    void import('./lib/supabase/auth').then(({ bootstrapOAuthCallback }) => {
+      void bootstrapOAuthCallback();
+    });
   }, []);
 
   useEffect(() => {
