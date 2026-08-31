@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const AGENT_ETA_DATABASE_SCHEMA = 'project_agent_eta_v2';
+const AGENT_ETA_DATABASE_SCHEMA = 'public';
 
 export interface SupabaseEnvironment {
   VITE_SUPABASE_URL?: unknown;
@@ -26,7 +26,7 @@ export type CloudResult<T> =
   | { ok: true; data: T }
   | { ok: false; kind: CloudFailureKind; message: string };
 
-let cachedClient: SupabaseClient<Database, 'project_agent_eta_v2'> | null | undefined;
+let cachedClient: SupabaseClient<Database, 'public'> | null | undefined;
 let cachedConfigurationKey: string | null = null;
 
 function isSafeSupabaseUrl(value: unknown): value is string {
@@ -69,7 +69,7 @@ export function isCloudDataConfigured(
 
 export function getSupabaseClient(
   environment: SupabaseEnvironment = import.meta.env as SupabaseEnvironment,
-): SupabaseClient<Database, 'project_agent_eta_v2'> | null {
+): SupabaseClient<Database, 'public'> | null {
   const configuration = readSupabaseConfiguration(environment);
   if (!configuration) {
     cachedClient = null;
@@ -80,7 +80,7 @@ export function getSupabaseClient(
   const configurationKey = `${configuration.url}\n${configuration.publishableKey}`;
   if (cachedClient !== undefined && cachedConfigurationKey === configurationKey) return cachedClient;
 
-  cachedClient = createClient<Database, 'project_agent_eta_v2'>(configuration.url, configuration.publishableKey, {
+  cachedClient = createClient<Database, 'public'>(configuration.url, configuration.publishableKey, {
     db: { schema: AGENT_ETA_DATABASE_SCHEMA },
     auth: {
       autoRefreshToken: true,

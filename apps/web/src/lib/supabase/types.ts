@@ -22,7 +22,7 @@ export interface Database {
   __InternalSupabase: {
     PostgrestVersion: '14.5';
   };
-  project_agent_eta_v2: {
+  public: {
     Tables: {
       private_runs: {
         Row: {
@@ -303,8 +303,8 @@ export interface Database {
   };
 }
 
-export type PrivateRunRow = Database['project_agent_eta_v2']['Tables']['private_runs']['Row'];
-export type PrivateRunInsert = Database['project_agent_eta_v2']['Tables']['private_runs']['Insert'];
-export type SyncSettingsRow = Database['project_agent_eta_v2']['Tables']['user_sync_settings']['Row'];
-export type ContributionRow = Database['project_agent_eta_v2']['Tables']['benchmark_contributions']['Row'];
-export type PublicMetricSnapshot = Database['project_agent_eta_v2']['Tables']['public_metric_snapshots']['Row'];
+export type PrivateRunRow = Database['public']['Tables']['private_runs']['Row'];
+export type PrivateRunInsert = Database['public']['Tables']['private_runs']['Insert'];
+export type SyncSettingsRow = Database['public']['Tables']['user_sync_settings']['Row'];
+export type ContributionRow = Database['public']['Tables']['benchmark_contributions']['Row'];
+export type PublicMetricSnapshot = Database['public']['Tables']['public_metric_snapshots']['Row'];
