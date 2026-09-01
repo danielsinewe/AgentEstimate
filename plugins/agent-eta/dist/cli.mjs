@@ -8087,391 +8087,16 @@ var estimateTask = (input2) => {
   };
 };
 
-// src/hook.ts
-import { createHash as createHash2 } from "crypto";
-import { pathToFileURL } from "url";
-
-// src/privacy.ts
-function derivePromptFeatures(prompt) {
-  const bounded = prompt.slice(0, 1e5);
-  const trimmed = bounded.trim();
-  const words = trimmed ? trimmed.split(/\s+/u).length : 0;
-  const lines = trimmed ? trimmed.split(/\r?\n/u).length : 0;
-  const checklistItems = (bounded.match(/(?:^|\n)\s*(?:[-*]|\d+[.)])\s+/gu) ?? []).length;
-  const analysis = analyzePrompt(bounded);
-  return {
-    characters: bounded.length,
-    words,
-    lines,
-    checklistItems,
-    taskClass: analysis.taskClass,
-    scope: analysis.scope,
-    ambiguity: analysis.ambiguity,
-    external: analysis.signals.external,
-    tests: analysis.signals.tests,
-    browser: analysis.signals.browser,
-    deploy: analysis.signals.deploy,
-    destructive: analysis.signals.destructive
-  };
-}
-function normalizeProvider(value, fallback = "codex") {
-  return typeof value === "string" && value.toLowerCase().includes("claude") ? "claude" : fallback;
-}
-function normalizeEffort(value) {
-  if (typeof value !== "string") return "medium";
-  const normalized = value.toLowerCase().replace(/[-_ ]/gu, "");
-  if (normalized === "low" || normalized === "minimal" || normalized === "none") return "low";
-  if (normalized === "high") return "high";
-  if (normalized === "xhigh" || normalized === "veryhigh") return "xhigh";
-  if (normalized === "max" || normalized === "ultra") return "max";
-  return "medium";
-}
-function normalizeSpeed(value) {
-  return typeof value === "string" && /(?:fast|priority|express)/iu.test(value) ? "fast" : "standard";
-}
-function normalizeModel(value, provider) {
-  if (typeof value !== "string" || !value.trim()) return provider === "codex" ? "codex-default" : "claude-default";
-  return value.trim().replace(/[^a-zA-Z0-9._:/-]/gu, "-").slice(0, 80) || `${provider}-default`;
-}
-function toStoredEstimate(estimate, baseline) {
-  return {
-    minutes: {
-      p25: estimate.minutes.p25,
-      p50: estimate.minutes.p50,
-      p80: estimate.minutes.p80,
-      p95: estimate.minutes.p95,
-      expected: estimate.minutes.expected
-    },
-    ...baseline ? {
-      baseline: {
-        p50: baseline.minutes.p50,
-        p80: baseline.minutes.p80,
-        p95: baseline.minutes.p95
-      }
-    } : {},
-    formatted: {
-      p50: estimate.formatted.p50,
-      p80: estimate.formatted.p80
-    },
-    confidence: estimate.confidence
-  };
-}
-function toStoredFeatures(input2) {
-  return {
-    provider: input2.provider,
-    model: input2.model,
-    effort: input2.effort,
-    speed: input2.speed,
-    prompt: input2.prompt,
-    repo: {
-      fileCount: input2.repo.fileCount,
-      linesOfCode: input2.repo.linesOfCode,
-      testFileCount: input2.repo.testFileCount,
-      languageCount: input2.repo.languageCount,
-      dependencyCount: input2.repo.dependencyCount,
-      packageCount: input2.repo.packageCount,
-      dirtyFileCount: input2.repo.dirtyFileCount
-    }
-  };
-}
-
-// src/repo-profile.ts
-import { execFile } from "child_process";
-import { constants } from "fs";
-import { lstat, open, opendir } from "fs/promises";
-import { extname, join, relative, resolve, sep } from "path";
-import { promisify } from "util";
-var execFileAsync = promisify(execFile);
-var EXCLUDED_DIRECTORIES = /* @__PURE__ */ new Set([
-  ".git",
-  ".hg",
-  ".svn",
-  ".next",
-  ".nuxt",
-  ".output",
-  ".parcel-cache",
-  ".svelte-kit",
-  ".turbo",
-  ".venv",
-  ".yarn",
-  "__pycache__",
-  "bower_components",
-  "build",
-  "coverage",
-  "deriveddata",
-  "dist",
-  "node_modules",
-  "out",
-  "pods",
-  "target",
-  "vendor",
-  "venv"
-]);
-var BINARY_EXTENSIONS = /* @__PURE__ */ new Set([
-  ".7z",
-  ".a",
-  ".avi",
-  ".bin",
-  ".bmp",
-  ".class",
-  ".dmg",
-  ".doc",
-  ".docx",
-  ".eot",
-  ".exe",
-  ".gif",
-  ".gz",
-  ".ico",
-  ".jar",
-  ".jpeg",
-  ".jpg",
-  ".lockb",
-  ".mov",
-  ".mp3",
-  ".mp4",
-  ".o",
-  ".otf",
-  ".pdf",
-  ".png",
-  ".pyc",
-  ".so",
-  ".tar",
-  ".tiff",
-  ".ttf",
-  ".wav",
-  ".webm",
-  ".webp",
-  ".woff",
-  ".woff2",
-  ".xls",
-  ".xlsx",
-  ".zip"
-]);
-var LANGUAGE_BY_EXTENSION = {
-  ".astro": "astro",
-  ".c": "c",
-  ".cc": "cpp",
-  ".cpp": "cpp",
-  ".cs": "csharp",
-  ".css": "css",
-  ".dart": "dart",
-  ".ex": "elixir",
-  ".exs": "elixir",
-  ".go": "go",
-  ".h": "c",
-  ".hpp": "cpp",
-  ".html": "html",
-  ".java": "java",
-  ".js": "javascript",
-  ".jsx": "javascript",
-  ".kt": "kotlin",
-  ".kts": "kotlin",
-  ".lua": "lua",
-  ".md": "markdown",
-  ".mjs": "javascript",
-  ".php": "php",
-  ".pl": "perl",
-  ".py": "python",
-  ".rb": "ruby",
-  ".rs": "rust",
-  ".scala": "scala",
-  ".sh": "shell",
-  ".sql": "sql",
-  ".svelte": "svelte",
-  ".swift": "swift",
-  ".tsx": "typescript",
-  ".ts": "typescript",
-  ".vue": "vue"
-};
-var TEST_FILE_PATTERN = /(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|(?:\.|_)(?:test|spec)\.[^/]+$/iu;
-function normalizeRelativePath(path) {
-  return path.split(sep).join("/").replace(/^\.\//u, "");
-}
-function isExcludedRepositoryPath(path) {
-  const normalized = normalizeRelativePath(path);
-  const segments = normalized.toLowerCase().split("/");
-  if (segments.some((segment) => EXCLUDED_DIRECTORIES.has(segment))) return true;
-  return BINARY_EXTENSIONS.has(extname(normalized).toLowerCase());
-}
-async function gitRoot(cwd, timeout) {
-  try {
-    const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
-      timeout,
-      maxBuffer: 1024 * 1024,
-      encoding: "utf8"
-    });
-    return resolve(stdout.trim());
-  } catch {
-    return null;
-  }
-}
-async function gitFiles(root, timeout) {
-  try {
-    const { stdout } = await execFileAsync("git", ["-C", root, "ls-files", "-co", "--exclude-standard", "-z"], {
-      timeout,
-      maxBuffer: 64 * 1024 * 1024,
-      encoding: "buffer"
-    });
-    return stdout.toString("utf8").split("\0").filter(Boolean).map(normalizeRelativePath).filter((path) => !isExcludedRepositoryPath(path));
-  } catch {
-    return null;
-  }
-}
-async function filesystemFiles(root, maxFiles, deadline) {
-  const files = [];
-  const directories = [root];
-  while (directories.length > 0 && files.length < maxFiles && Date.now() < deadline) {
-    const directory = directories.pop();
-    if (!directory) break;
-    let handle;
-    try {
-      handle = await opendir(directory);
-    } catch {
-      continue;
-    }
-    for await (const entry of handle) {
-      if (entry.isSymbolicLink()) continue;
-      const absolute = join(directory, entry.name);
-      const path = normalizeRelativePath(relative(root, absolute));
-      if (isExcludedRepositoryPath(path)) continue;
-      if (entry.isDirectory()) directories.push(absolute);
-      else if (entry.isFile()) files.push(path);
-      if (files.length >= maxFiles) break;
-    }
-  }
-  return { files, truncated: directories.length > 0 || files.length >= maxFiles };
-}
-async function readBoundedFile(path, maxBytes) {
-  try {
-    const before = await lstat(path);
-    if (!before.isFile() || before.isSymbolicLink()) return null;
-    const noFollow = constants.O_NOFOLLOW ?? 0;
-    const handle = await open(path, constants.O_RDONLY | noFollow);
-    try {
-      const file2 = await handle.stat();
-      if (!file2.isFile()) return null;
-      const byteCount = Math.min(file2.size, maxBytes);
-      const bytes = Buffer.alloc(byteCount);
-      const { bytesRead } = byteCount > 0 ? await handle.read(bytes, 0, byteCount, 0) : { bytesRead: 0 };
-      return { bytes: bytes.subarray(0, bytesRead), fileSize: file2.size };
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    return null;
-  }
-}
-async function countLines(path, maxBytes) {
-  const file2 = await readBoundedFile(path, maxBytes);
-  if (!file2) return null;
-  if (file2.bytes.includes(0)) return 0;
-  if (file2.bytes.length === 0) return 0;
-  let sampledLines = 1;
-  for (const byte of file2.bytes) if (byte === 10) sampledLines += 1;
-  return Math.max(1, Math.round(sampledLines * (file2.fileSize / file2.bytes.length)));
-}
-async function mapWithConcurrency(values, concurrency, deadline, operation) {
-  const results = [];
-  let nextIndex = 0;
-  const workers = Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, async () => {
-    while (Date.now() < deadline) {
-      const index = nextIndex;
-      nextIndex += 1;
-      const value = values[index];
-      if (value === void 0) return;
-      results.push(await operation(value));
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-async function sumDependencies(root, packageFiles, deadline) {
-  let count = 0;
-  for (const path of packageFiles.slice(0, 100)) {
-    if (Date.now() >= deadline) break;
-    try {
-      const file2 = await readBoundedFile(join(root, path), 1024 * 1024);
-      if (!file2 || file2.fileSize > file2.bytes.length) continue;
-      const parsed = JSON.parse(file2.bytes.toString("utf8"));
-      for (const key of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
-        const value = parsed[key];
-        if (value && typeof value === "object" && !Array.isArray(value)) count += Object.keys(value).length;
-      }
-    } catch {
-    }
-  }
-  return count;
-}
-async function dirtyFileCount(root, timeout) {
-  try {
-    const { stdout } = await execFileAsync("git", ["-C", root, "status", "--porcelain=v1", "-uno"], {
-      timeout,
-      maxBuffer: 8 * 1024 * 1024,
-      encoding: "utf8"
-    });
-    return stdout.split(/\r?\n/u).filter(Boolean).length;
-  } catch {
-    return 0;
-  }
-}
-function deterministicSample(values, limit) {
-  if (values.length <= limit) return values;
-  const result = [];
-  const stride = values.length / limit;
-  for (let index = 0; index < limit; index += 1) {
-    const item = values[Math.floor(index * stride)];
-    if (item !== void 0) result.push(item);
-  }
-  return result;
-}
-async function profileRepository(cwd = process.cwd(), options = {}) {
-  const maxFiles = options.maxFiles ?? 5e4;
-  const maxSampleFiles = options.maxSampleFiles ?? 500;
-  const gitTimeoutMs = options.gitTimeoutMs ?? 1200;
-  const maxFileBytes = options.maxFileBytes ?? 128 * 1024;
-  const readConcurrency = options.readConcurrency ?? 12;
-  const deadline = Date.now() + (options.budgetMs ?? 5e3);
-  const resolvedCwd = resolve(cwd);
-  const remainingTimeout = () => Math.max(50, Math.min(gitTimeoutMs, deadline - Date.now()));
-  const discoveredRoot = await gitRoot(resolvedCwd, remainingTimeout());
-  const root = discoveredRoot ?? resolvedCwd;
-  const trackedFiles = discoveredRoot && Date.now() < deadline ? await gitFiles(root, remainingTimeout()) : null;
-  const fallback = trackedFiles ? null : await filesystemFiles(root, maxFiles, deadline);
-  const allFiles = (trackedFiles ?? fallback?.files ?? []).slice(0, maxFiles);
-  const truncated = Boolean(fallback?.truncated) || (trackedFiles?.length ?? 0) > maxFiles;
-  const codeFiles = allFiles.filter((path) => LANGUAGE_BY_EXTENSION[extname(path).toLowerCase()] !== void 0);
-  const sample = deterministicSample(codeFiles, maxSampleFiles);
-  const lineCounts = await mapWithConcurrency(
-    sample,
-    readConcurrency,
-    deadline,
-    (path) => countLines(join(root, path), maxFileBytes)
-  );
-  const validLineCounts = lineCounts.filter((value) => value !== null);
-  const sampledLines = validLineCounts.reduce((sum, lines) => sum + lines, 0);
-  const linesOfCode = validLineCounts.length === 0 ? 0 : Math.round(sampledLines * codeFiles.length / validLineCounts.length);
-  const languages = new Set(codeFiles.map((path) => LANGUAGE_BY_EXTENSION[extname(path).toLowerCase()]).filter(Boolean));
-  const packageFiles = allFiles.filter((path) => /(?:^|\/)package\.json$/u.test(path));
-  return {
-    root,
-    source: trackedFiles ? "git" : "filesystem",
-    fileCount: allFiles.length,
-    linesOfCode,
-    testFileCount: allFiles.filter((path) => TEST_FILE_PATTERN.test(path)).length,
-    languageCount: languages.size,
-    dependencyCount: await sumDependencies(root, packageFiles, deadline),
-    packageCount: packageFiles.length,
-    dirtyFileCount: trackedFiles && Date.now() < deadline ? await dirtyFileCount(root, remainingTimeout()) : 0,
-    sampledCodeFiles: validLineCounts.length,
-    truncated: truncated || validLineCounts.length < sample.length || Date.now() >= deadline
-  };
-}
+// src/cloud-sync.ts
+import { randomBytes as randomBytes2 } from "crypto";
+import { chmod as chmod2, mkdir as mkdir2, readFile as readFile2, rename as rename2, unlink as unlink2, writeFile as writeFile2 } from "fs/promises";
+import { dirname as dirname2, join as join2 } from "path";
 
 // src/store.ts
 import { createHash, createHmac, randomBytes } from "crypto";
-import { appendFile, chmod, mkdir, open as open2, readFile, rename, stat, unlink, writeFile } from "fs/promises";
+import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from "fs/promises";
 import { homedir } from "os";
-import { dirname, join as join2, resolve as resolve2, sep as sep2 } from "path";
+import { dirname, join, resolve, sep } from "path";
 var SCHEMA_VERSION = 1;
 var HISTORY_FILENAME = "runs.jsonl";
 var SALT_FILENAME = ".install-salt";
@@ -8676,19 +8301,19 @@ function isCachedProfile(value) {
   ].every((item) => typeof item === "number" && Number.isFinite(item) && item >= 0) && typeof profile.truncated === "boolean";
 }
 function resolvePluginDataDir(options = {}) {
-  if (options.dataDir) return resolve2(options.dataDir);
+  if (options.dataDir) return resolve(options.dataDir);
   const env = options.env ?? process.env;
   const configured = env.AGENT_ETA_DATA_DIR ?? env.CODEX_PLUGIN_DATA ?? env.PLUGIN_DATA ?? env.CLAUDE_PLUGIN_DATA;
-  if (configured) return resolve2(configured);
-  const cwd = resolve2(options.cwd ?? process.cwd());
-  const parts = cwd.split(sep2);
+  if (configured) return resolve(configured);
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const parts = cwd.split(sep);
   const pluginsIndex = parts.lastIndexOf("plugins");
   if (pluginsIndex > 0 && parts[pluginsIndex + 1] === "cache" && parts[pluginsIndex + 3] === "agent-eta" && parts[pluginsIndex + 2]) {
-    const codexHome = parts.slice(0, pluginsIndex).join(sep2) || sep2;
-    return resolve2(codexHome, "plugins", "data", `agent-eta-${parts[pluginsIndex + 2]}`);
+    const codexHome = parts.slice(0, pluginsIndex).join(sep) || sep;
+    return resolve(codexHome, "plugins", "data", `agent-eta-${parts[pluginsIndex + 2]}`);
   }
   const xdgData = env.XDG_DATA_HOME;
-  return resolve2(xdgData ? join2(xdgData, "agent-eta") : join2(homedir(), ".agent-eta"));
+  return resolve(xdgData ? join(xdgData, "agent-eta") : join(homedir(), ".agent-eta"));
 }
 var CalibrationStore = class {
   dataDir;
@@ -8696,7 +8321,7 @@ var CalibrationStore = class {
   salt = null;
   constructor(options = {}) {
     this.dataDir = resolvePluginDataDir(options);
-    this.historyPath = join2(this.dataDir, HISTORY_FILENAME);
+    this.historyPath = join(this.dataDir, HISTORY_FILENAME);
   }
   async ensureDirectory() {
     await mkdir(this.dataDir, { recursive: true, mode: 448 });
@@ -8713,7 +8338,7 @@ var CalibrationStore = class {
   async getSalt() {
     if (this.salt) return this.salt;
     await this.ensureDirectory();
-    const saltPath = join2(this.dataDir, SALT_FILENAME);
+    const saltPath = join(this.dataDir, SALT_FILENAME);
     const existing = await this.readValidSalt(saltPath);
     if (existing) {
       await chmod(saltPath, 384).catch(() => void 0);
@@ -8727,12 +8352,12 @@ var CalibrationStore = class {
         return winner;
       }
       const candidate = randomBytes(SALT_BYTES);
-      const temporaryPath = join2(
+      const temporaryPath = join(
         this.dataDir,
         `${SALT_FILENAME}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`
       );
       try {
-        const handle = await open2(temporaryPath, "wx", 384);
+        const handle = await open(temporaryPath, "wx", 384);
         try {
           await handle.writeFile(candidate);
           await handle.sync();
@@ -8764,18 +8389,18 @@ var CalibrationStore = class {
     const cacheKey = await this.privateKey(`profile:${identity}`);
     try {
       const parsed = JSON.parse(
-        await readFile(join2(this.dataDir, PROFILE_DIRECTORY, `${cacheKey}.json`), "utf8")
+        await readFile(join(this.dataDir, PROFILE_DIRECTORY, `${cacheKey}.json`), "utf8")
       );
       if (!isCachedProfile(parsed)) return null;
       if (Date.now() - Date.parse(parsed.savedAt) > maxAgeMs) return null;
-      return { root: resolve2(identity), ...parsed.profile };
+      return { root: resolve(identity), ...parsed.profile };
     } catch {
       return null;
     }
   }
   async cacheRepositoryProfile(identity, profile) {
     const cacheKey = await this.privateKey(`profile:${identity}`);
-    const directory = join2(this.dataDir, PROFILE_DIRECTORY);
+    const directory = join(this.dataDir, PROFILE_DIRECTORY);
     await mkdir(directory, { recursive: true, mode: 448 });
     await chmod(directory, 448).catch(() => void 0);
     const derivedProfile = {
@@ -8790,7 +8415,7 @@ var CalibrationStore = class {
       sampledCodeFiles: profile.sampledCodeFiles,
       truncated: profile.truncated
     };
-    const path = join2(directory, `${cacheKey}.json`);
+    const path = join(directory, `${cacheKey}.json`);
     await writeFile(path, JSON.stringify({ savedAt: (/* @__PURE__ */ new Date()).toISOString(), profile: derivedProfile }), {
       encoding: "utf8",
       mode: 384
@@ -8824,11 +8449,11 @@ var CalibrationStore = class {
   }
   async withFileLock(filename, busyMessage, operation) {
     await this.ensureDirectory();
-    const lockPath = join2(this.dataDir, filename);
+    const lockPath = join(this.dataDir, filename);
     const deadline = Date.now() + 1e3;
     while (true) {
       try {
-        const handle = await open2(lockPath, "wx", 384);
+        const handle = await open(lockPath, "wx", 384);
         await handle.close();
         break;
       } catch {
@@ -9026,6 +8651,611 @@ var CalibrationStore = class {
   }
 };
 
+// src/cloud-sync.ts
+var CONNECTION_PREFIX = "agent-eta-v1.";
+var CONFIG_FILENAME = "cloud-sync.json";
+var STATE_FILENAME = "cloud-sync-state.json";
+var DATABASE_SCHEMA = "project_agent_eta_v2";
+var MAX_CONFIG_BYTES = 16 * 1024;
+var MAX_STATE_BYTES = 1024 * 1024;
+var MAX_TRACKED_RUNS = 1e4;
+var DEFAULT_BATCH_SIZE = 50;
+function isObject2(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function safeUrl(value) {
+  if (typeof value !== "string" || value.length > 2048 || value.trim() !== value) return false;
+  try {
+    const parsed = new URL(value);
+    const local = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    return (parsed.protocol === "https:" || local && parsed.protocol === "http:") && !parsed.username && !parsed.password && !parsed.search && !parsed.hash;
+  } catch {
+    return false;
+  }
+}
+function validConnection(value) {
+  if (!isObject2(value)) return false;
+  return value.version === 1 && safeUrl(value.url) && typeof value.publishableKey === "string" && value.publishableKey.length >= 20 && value.publishableKey.length <= 4096 && value.publishableKey.trim() === value.publishableKey && !/\s/u.test(value.publishableKey) && typeof value.token === "string" && /^aet_[a-f0-9]{64}$/u.test(value.token) && Object.keys(value).every((key) => ["version", "url", "publishableKey", "token"].includes(key));
+}
+function validState(value) {
+  if (!isObject2(value) || value.version !== 1 || !Array.isArray(value.syncedRunIds)) return false;
+  return value.syncedRunIds.length <= MAX_TRACKED_RUNS && value.syncedRunIds.every((id) => typeof id === "string" && /^[a-f0-9]{32}$/u.test(id)) && (value.lastSuccessAt === void 0 || typeof value.lastSuccessAt === "string") && (value.lastError === void 0 || typeof value.lastError === "string");
+}
+async function readBoundedJson(path, maxBytes) {
+  const contents = await readFile2(path);
+  if (contents.byteLength > maxBytes) throw new Error("Agent ETA cloud sync file is too large.");
+  return JSON.parse(contents.toString("utf8"));
+}
+async function writePrivateJson(path, value) {
+  const dataDir = dirname2(path);
+  await mkdir2(dataDir, { recursive: true, mode: 448 });
+  await chmod2(dataDir, 448).catch(() => void 0);
+  const temporaryPath = `${path}.${process.pid}.${randomBytes2(6).toString("hex")}.tmp`;
+  try {
+    await writeFile2(temporaryPath, `${JSON.stringify(value)}
+`, { encoding: "utf8", mode: 384, flag: "wx" });
+    await rename2(temporaryPath, path);
+    await chmod2(path, 384).catch(() => void 0);
+  } finally {
+    await unlink2(temporaryPath).catch(() => void 0);
+  }
+}
+function paths(options) {
+  const dataDir = resolvePluginDataDir({ dataDir: options.dataDir });
+  return {
+    config: join2(dataDir, CONFIG_FILENAME),
+    state: join2(dataDir, STATE_FILENAME)
+  };
+}
+async function readConnection(options) {
+  try {
+    const { config: config2 } = paths(options);
+    const value = await readBoundedJson(config2, MAX_CONFIG_BYTES);
+    if (!validConnection(value)) throw new Error("Saved Agent ETA cloud connection is invalid.");
+    await chmod2(config2, 384).catch(() => void 0);
+    return value;
+  } catch (error61) {
+    const code = error61.code;
+    if (code === "ENOENT") return null;
+    throw error61;
+  }
+}
+async function readState(options) {
+  try {
+    const { state } = paths(options);
+    const value = await readBoundedJson(state, MAX_STATE_BYTES);
+    if (!validState(value)) throw new Error("Saved Agent ETA cloud sync state is invalid.");
+    await chmod2(state, 384).catch(() => void 0);
+    return value;
+  } catch (error61) {
+    const code = error61.code;
+    if (code === "ENOENT") return { version: 1, syncedRunIds: [] };
+    throw error61;
+  }
+}
+function parseConnectionCode(code) {
+  const trimmed = code.trim();
+  if (!trimmed.startsWith(CONNECTION_PREFIX)) throw new Error("Connection code is invalid.");
+  let parsed;
+  try {
+    parsed = JSON.parse(Buffer.from(trimmed.slice(CONNECTION_PREFIX.length), "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Connection code is invalid.");
+  }
+  if (!validConnection(parsed)) throw new Error("Connection code is invalid.");
+  return parsed;
+}
+async function saveCloudSyncConnection(code, options = {}) {
+  const connection = parseConnectionCode(code);
+  const { config: config2, state } = paths(options);
+  await writePrivateJson(config2, connection);
+  await writePrivateJson(state, { version: 1, syncedRunIds: [] });
+}
+async function disconnectCloudSync(options = {}) {
+  const { config: config2, state } = paths(options);
+  const results = await Promise.allSettled([unlink2(config2), unlink2(state)]);
+  return results.some((result) => result.status === "fulfilled");
+}
+function toCloudRun(entry) {
+  const prompt = entry.features.prompt;
+  const repo = entry.features.repo;
+  return {
+    client_run_id: entry.runId,
+    provider: entry.features.provider,
+    model: entry.features.model,
+    effort: entry.features.effort,
+    speed: entry.features.speed,
+    task_class: prompt.taskClass,
+    scope: prompt.scope,
+    ambiguity: prompt.ambiguity,
+    included_tests: prompt.tests,
+    included_browser: prompt.browser,
+    included_external_services: prompt.external,
+    included_deploy: prompt.deploy,
+    destructive: prompt.destructive,
+    prompt_characters: prompt.characters,
+    prompt_words: prompt.words,
+    prompt_lines: prompt.lines,
+    prompt_checklist_items: prompt.checklistItems,
+    repo_file_count: repo.fileCount,
+    repo_lines_of_code: repo.linesOfCode,
+    repo_test_file_count: repo.testFileCount,
+    repo_language_count: repo.languageCount,
+    repo_dependency_count: repo.dependencyCount,
+    repo_package_count: repo.packageCount,
+    repo_dirty_file_count: repo.dirtyFileCount,
+    forecast_p25_minutes: Math.max(1e-3, entry.estimate.minutes.p25),
+    forecast_p50_minutes: Math.max(1e-3, entry.estimate.minutes.p50),
+    forecast_p80_minutes: Math.max(1e-3, entry.estimate.minutes.p80),
+    forecast_p95_minutes: Math.max(1e-3, entry.estimate.minutes.p95),
+    actual_minutes: Math.max(1e-3, entry.elapsedMs / 6e4),
+    outcome: entry.outcome,
+    client_created_at: entry.startedAt
+  };
+}
+function safeRemoteMessage(value) {
+  if (!isObject2(value)) return "Cloud sync was rejected.";
+  const message = value.message;
+  return typeof message === "string" && message.length <= 240 ? message : "Cloud sync was rejected.";
+}
+async function uploadBatch(connection, batch, options) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 3e3);
+  try {
+    const response = await (options.fetchImpl ?? fetch)(`${connection.url}/rest/v1/rpc/sync_plugin_runs`, {
+      method: "POST",
+      headers: {
+        apikey: connection.publishableKey,
+        "Content-Type": "application/json",
+        "Content-Profile": DATABASE_SCHEMA,
+        "Accept-Profile": DATABASE_SCHEMA,
+        "X-Client-Info": "agent-eta-plugin/0.1"
+      },
+      body: JSON.stringify({ p_token: connection.token, p_runs: batch }),
+      signal: controller.signal
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(safeRemoteMessage(body));
+    if (!isObject2(body) || !Array.isArray(body.runIds) || typeof body.syncedAt !== "string") {
+      throw new Error("Cloud sync returned an invalid response.");
+    }
+    const expected = new Set(batch.map((run) => run.client_run_id));
+    const runIds = body.runIds.filter(
+      (id) => typeof id === "string" && expected.has(id)
+    );
+    return { runIds, syncedAt: body.syncedAt };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+async function syncPendingRuns(history, options = {}) {
+  const connection = await readConnection(options);
+  if (!connection) return { configured: false, pending: 0, synced: 0 };
+  const state = await readState(options);
+  const alreadySynced = new Set(state.syncedRunIds);
+  const eligible = history.filter(
+    (entry) => entry.elapsedMs !== void 0 && entry.outcome !== void 0
+  );
+  const pending = eligible.filter((entry) => !alreadySynced.has(entry.runId));
+  const initialPending = pending.length;
+  const maxBatches = Math.max(1, options.maxBatches ?? Number.MAX_SAFE_INTEGER);
+  let synced = 0;
+  try {
+    for (let start = 0, batchNumber = 0; start < pending.length && batchNumber < maxBatches; start += DEFAULT_BATCH_SIZE, batchNumber += 1) {
+      const result = await uploadBatch(connection, pending.slice(start, start + DEFAULT_BATCH_SIZE).map(toCloudRun), options);
+      for (const runId of result.runIds) alreadySynced.add(runId);
+      synced += result.runIds.length;
+      state.lastSuccessAt = result.syncedAt;
+      delete state.lastError;
+    }
+  } catch (error61) {
+    state.lastError = error61 instanceof Error ? error61.message.slice(0, 240) : "Cloud sync failed.";
+  }
+  state.syncedRunIds = [...alreadySynced].slice(-MAX_TRACKED_RUNS);
+  await writePrivateJson(paths(options).state, state);
+  return {
+    configured: true,
+    pending: Math.max(0, initialPending - synced),
+    synced,
+    ...state.lastSuccessAt ? { lastSuccessAt: state.lastSuccessAt } : {},
+    ...state.lastError ? { error: state.lastError } : {}
+  };
+}
+async function cloudSyncStatus(history, options = {}) {
+  const connection = await readConnection(options);
+  if (!connection) return { configured: false, pending: 0, synced: 0 };
+  const state = await readState(options);
+  const synced = new Set(state.syncedRunIds);
+  const pending = history.filter((entry) => entry.elapsedMs !== void 0 && !synced.has(entry.runId)).length;
+  return {
+    configured: true,
+    pending,
+    synced: 0,
+    ...state.lastSuccessAt ? { lastSuccessAt: state.lastSuccessAt } : {},
+    ...state.lastError ? { error: state.lastError } : {}
+  };
+}
+
+// src/hook.ts
+import { createHash as createHash2 } from "crypto";
+import { pathToFileURL } from "url";
+
+// src/privacy.ts
+function derivePromptFeatures(prompt) {
+  const bounded = prompt.slice(0, 1e5);
+  const trimmed = bounded.trim();
+  const words = trimmed ? trimmed.split(/\s+/u).length : 0;
+  const lines = trimmed ? trimmed.split(/\r?\n/u).length : 0;
+  const checklistItems = (bounded.match(/(?:^|\n)\s*(?:[-*]|\d+[.)])\s+/gu) ?? []).length;
+  const analysis = analyzePrompt(bounded);
+  return {
+    characters: bounded.length,
+    words,
+    lines,
+    checklistItems,
+    taskClass: analysis.taskClass,
+    scope: analysis.scope,
+    ambiguity: analysis.ambiguity,
+    external: analysis.signals.external,
+    tests: analysis.signals.tests,
+    browser: analysis.signals.browser,
+    deploy: analysis.signals.deploy,
+    destructive: analysis.signals.destructive
+  };
+}
+function normalizeProvider(value, fallback = "codex") {
+  return typeof value === "string" && value.toLowerCase().includes("claude") ? "claude" : fallback;
+}
+function normalizeEffort(value) {
+  if (typeof value !== "string") return "medium";
+  const normalized = value.toLowerCase().replace(/[-_ ]/gu, "");
+  if (normalized === "low" || normalized === "minimal" || normalized === "none") return "low";
+  if (normalized === "high") return "high";
+  if (normalized === "xhigh" || normalized === "veryhigh") return "xhigh";
+  if (normalized === "max" || normalized === "ultra") return "max";
+  return "medium";
+}
+function normalizeSpeed(value) {
+  return typeof value === "string" && /(?:fast|priority|express)/iu.test(value) ? "fast" : "standard";
+}
+function normalizeModel(value, provider) {
+  if (typeof value !== "string" || !value.trim()) return provider === "codex" ? "codex-default" : "claude-default";
+  return value.trim().replace(/[^a-zA-Z0-9._:/-]/gu, "-").slice(0, 80) || `${provider}-default`;
+}
+function toStoredEstimate(estimate, baseline) {
+  return {
+    minutes: {
+      p25: estimate.minutes.p25,
+      p50: estimate.minutes.p50,
+      p80: estimate.minutes.p80,
+      p95: estimate.minutes.p95,
+      expected: estimate.minutes.expected
+    },
+    ...baseline ? {
+      baseline: {
+        p50: baseline.minutes.p50,
+        p80: baseline.minutes.p80,
+        p95: baseline.minutes.p95
+      }
+    } : {},
+    formatted: {
+      p50: estimate.formatted.p50,
+      p80: estimate.formatted.p80
+    },
+    confidence: estimate.confidence
+  };
+}
+function toStoredFeatures(input2) {
+  return {
+    provider: input2.provider,
+    model: input2.model,
+    effort: input2.effort,
+    speed: input2.speed,
+    prompt: input2.prompt,
+    repo: {
+      fileCount: input2.repo.fileCount,
+      linesOfCode: input2.repo.linesOfCode,
+      testFileCount: input2.repo.testFileCount,
+      languageCount: input2.repo.languageCount,
+      dependencyCount: input2.repo.dependencyCount,
+      packageCount: input2.repo.packageCount,
+      dirtyFileCount: input2.repo.dirtyFileCount
+    }
+  };
+}
+
+// src/repo-profile.ts
+import { execFile } from "child_process";
+import { constants } from "fs";
+import { lstat, open as open2, opendir } from "fs/promises";
+import { extname, join as join3, relative, resolve as resolve2, sep as sep2 } from "path";
+import { promisify } from "util";
+var execFileAsync = promisify(execFile);
+var EXCLUDED_DIRECTORIES = /* @__PURE__ */ new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".next",
+  ".nuxt",
+  ".output",
+  ".parcel-cache",
+  ".svelte-kit",
+  ".turbo",
+  ".venv",
+  ".yarn",
+  "__pycache__",
+  "bower_components",
+  "build",
+  "coverage",
+  "deriveddata",
+  "dist",
+  "node_modules",
+  "out",
+  "pods",
+  "target",
+  "vendor",
+  "venv"
+]);
+var BINARY_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".7z",
+  ".a",
+  ".avi",
+  ".bin",
+  ".bmp",
+  ".class",
+  ".dmg",
+  ".doc",
+  ".docx",
+  ".eot",
+  ".exe",
+  ".gif",
+  ".gz",
+  ".ico",
+  ".jar",
+  ".jpeg",
+  ".jpg",
+  ".lockb",
+  ".mov",
+  ".mp3",
+  ".mp4",
+  ".o",
+  ".otf",
+  ".pdf",
+  ".png",
+  ".pyc",
+  ".so",
+  ".tar",
+  ".tiff",
+  ".ttf",
+  ".wav",
+  ".webm",
+  ".webp",
+  ".woff",
+  ".woff2",
+  ".xls",
+  ".xlsx",
+  ".zip"
+]);
+var LANGUAGE_BY_EXTENSION = {
+  ".astro": "astro",
+  ".c": "c",
+  ".cc": "cpp",
+  ".cpp": "cpp",
+  ".cs": "csharp",
+  ".css": "css",
+  ".dart": "dart",
+  ".ex": "elixir",
+  ".exs": "elixir",
+  ".go": "go",
+  ".h": "c",
+  ".hpp": "cpp",
+  ".html": "html",
+  ".java": "java",
+  ".js": "javascript",
+  ".jsx": "javascript",
+  ".kt": "kotlin",
+  ".kts": "kotlin",
+  ".lua": "lua",
+  ".md": "markdown",
+  ".mjs": "javascript",
+  ".php": "php",
+  ".pl": "perl",
+  ".py": "python",
+  ".rb": "ruby",
+  ".rs": "rust",
+  ".scala": "scala",
+  ".sh": "shell",
+  ".sql": "sql",
+  ".svelte": "svelte",
+  ".swift": "swift",
+  ".tsx": "typescript",
+  ".ts": "typescript",
+  ".vue": "vue"
+};
+var TEST_FILE_PATTERN = /(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|(?:\.|_)(?:test|spec)\.[^/]+$/iu;
+function normalizeRelativePath(path) {
+  return path.split(sep2).join("/").replace(/^\.\//u, "");
+}
+function isExcludedRepositoryPath(path) {
+  const normalized = normalizeRelativePath(path);
+  const segments = normalized.toLowerCase().split("/");
+  if (segments.some((segment) => EXCLUDED_DIRECTORIES.has(segment))) return true;
+  return BINARY_EXTENSIONS.has(extname(normalized).toLowerCase());
+}
+async function gitRoot(cwd, timeout) {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
+      timeout,
+      maxBuffer: 1024 * 1024,
+      encoding: "utf8"
+    });
+    return resolve2(stdout.trim());
+  } catch {
+    return null;
+  }
+}
+async function gitFiles(root, timeout) {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", root, "ls-files", "-co", "--exclude-standard", "-z"], {
+      timeout,
+      maxBuffer: 64 * 1024 * 1024,
+      encoding: "buffer"
+    });
+    return stdout.toString("utf8").split("\0").filter(Boolean).map(normalizeRelativePath).filter((path) => !isExcludedRepositoryPath(path));
+  } catch {
+    return null;
+  }
+}
+async function filesystemFiles(root, maxFiles, deadline) {
+  const files = [];
+  const directories = [root];
+  while (directories.length > 0 && files.length < maxFiles && Date.now() < deadline) {
+    const directory = directories.pop();
+    if (!directory) break;
+    let handle;
+    try {
+      handle = await opendir(directory);
+    } catch {
+      continue;
+    }
+    for await (const entry of handle) {
+      if (entry.isSymbolicLink()) continue;
+      const absolute = join3(directory, entry.name);
+      const path = normalizeRelativePath(relative(root, absolute));
+      if (isExcludedRepositoryPath(path)) continue;
+      if (entry.isDirectory()) directories.push(absolute);
+      else if (entry.isFile()) files.push(path);
+      if (files.length >= maxFiles) break;
+    }
+  }
+  return { files, truncated: directories.length > 0 || files.length >= maxFiles };
+}
+async function readBoundedFile(path, maxBytes) {
+  try {
+    const before = await lstat(path);
+    if (!before.isFile() || before.isSymbolicLink()) return null;
+    const noFollow = constants.O_NOFOLLOW ?? 0;
+    const handle = await open2(path, constants.O_RDONLY | noFollow);
+    try {
+      const file2 = await handle.stat();
+      if (!file2.isFile()) return null;
+      const byteCount = Math.min(file2.size, maxBytes);
+      const bytes = Buffer.alloc(byteCount);
+      const { bytesRead } = byteCount > 0 ? await handle.read(bytes, 0, byteCount, 0) : { bytesRead: 0 };
+      return { bytes: bytes.subarray(0, bytesRead), fileSize: file2.size };
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return null;
+  }
+}
+async function countLines(path, maxBytes) {
+  const file2 = await readBoundedFile(path, maxBytes);
+  if (!file2) return null;
+  if (file2.bytes.includes(0)) return 0;
+  if (file2.bytes.length === 0) return 0;
+  let sampledLines = 1;
+  for (const byte of file2.bytes) if (byte === 10) sampledLines += 1;
+  return Math.max(1, Math.round(sampledLines * (file2.fileSize / file2.bytes.length)));
+}
+async function mapWithConcurrency(values, concurrency, deadline, operation) {
+  const results = [];
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, async () => {
+    while (Date.now() < deadline) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const value = values[index];
+      if (value === void 0) return;
+      results.push(await operation(value));
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+async function sumDependencies(root, packageFiles, deadline) {
+  let count = 0;
+  for (const path of packageFiles.slice(0, 100)) {
+    if (Date.now() >= deadline) break;
+    try {
+      const file2 = await readBoundedFile(join3(root, path), 1024 * 1024);
+      if (!file2 || file2.fileSize > file2.bytes.length) continue;
+      const parsed = JSON.parse(file2.bytes.toString("utf8"));
+      for (const key of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+        const value = parsed[key];
+        if (value && typeof value === "object" && !Array.isArray(value)) count += Object.keys(value).length;
+      }
+    } catch {
+    }
+  }
+  return count;
+}
+async function dirtyFileCount(root, timeout) {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", root, "status", "--porcelain=v1", "-uno"], {
+      timeout,
+      maxBuffer: 8 * 1024 * 1024,
+      encoding: "utf8"
+    });
+    return stdout.split(/\r?\n/u).filter(Boolean).length;
+  } catch {
+    return 0;
+  }
+}
+function deterministicSample(values, limit) {
+  if (values.length <= limit) return values;
+  const result = [];
+  const stride = values.length / limit;
+  for (let index = 0; index < limit; index += 1) {
+    const item = values[Math.floor(index * stride)];
+    if (item !== void 0) result.push(item);
+  }
+  return result;
+}
+async function profileRepository(cwd = process.cwd(), options = {}) {
+  const maxFiles = options.maxFiles ?? 5e4;
+  const maxSampleFiles = options.maxSampleFiles ?? 500;
+  const gitTimeoutMs = options.gitTimeoutMs ?? 1200;
+  const maxFileBytes = options.maxFileBytes ?? 128 * 1024;
+  const readConcurrency = options.readConcurrency ?? 12;
+  const deadline = Date.now() + (options.budgetMs ?? 5e3);
+  const resolvedCwd = resolve2(cwd);
+  const remainingTimeout = () => Math.max(50, Math.min(gitTimeoutMs, deadline - Date.now()));
+  const discoveredRoot = await gitRoot(resolvedCwd, remainingTimeout());
+  const root = discoveredRoot ?? resolvedCwd;
+  const trackedFiles = discoveredRoot && Date.now() < deadline ? await gitFiles(root, remainingTimeout()) : null;
+  const fallback = trackedFiles ? null : await filesystemFiles(root, maxFiles, deadline);
+  const allFiles = (trackedFiles ?? fallback?.files ?? []).slice(0, maxFiles);
+  const truncated = Boolean(fallback?.truncated) || (trackedFiles?.length ?? 0) > maxFiles;
+  const codeFiles = allFiles.filter((path) => LANGUAGE_BY_EXTENSION[extname(path).toLowerCase()] !== void 0);
+  const sample = deterministicSample(codeFiles, maxSampleFiles);
+  const lineCounts = await mapWithConcurrency(
+    sample,
+    readConcurrency,
+    deadline,
+    (path) => countLines(join3(root, path), maxFileBytes)
+  );
+  const validLineCounts = lineCounts.filter((value) => value !== null);
+  const sampledLines = validLineCounts.reduce((sum, lines) => sum + lines, 0);
+  const linesOfCode = validLineCounts.length === 0 ? 0 : Math.round(sampledLines * codeFiles.length / validLineCounts.length);
+  const languages = new Set(codeFiles.map((path) => LANGUAGE_BY_EXTENSION[extname(path).toLowerCase()]).filter(Boolean));
+  const packageFiles = allFiles.filter((path) => /(?:^|\/)package\.json$/u.test(path));
+  return {
+    root,
+    source: trackedFiles ? "git" : "filesystem",
+    fileCount: allFiles.length,
+    linesOfCode,
+    testFileCount: allFiles.filter((path) => TEST_FILE_PATTERN.test(path)).length,
+    languageCount: languages.size,
+    dependencyCount: await sumDependencies(root, packageFiles, deadline),
+    packageCount: packageFiles.length,
+    dirtyFileCount: trackedFiles && Date.now() < deadline ? await dirtyFileCount(root, remainingTimeout()) : 0,
+    sampledCodeFiles: validLineCounts.length,
+    truncated: truncated || validLineCounts.length < sample.length || Date.now() >= deadline
+  };
+}
+
 // src/hook.ts
 var MAX_HOOK_INPUT_BYTES = 2 * 1024 * 1024;
 var ETA_UNAVAILABLE_MESSAGE = "Agent ETA unavailable \xB7 prompt will continue";
@@ -9200,13 +9430,21 @@ async function handleCompletion(input2, options, outcome) {
   try {
     const store = new CalibrationStore({ dataDir: options.dataDir });
     const turnId = asString(input2.turn_id) ?? asString(input2.turnId);
-    await store.completeRun({
+    const completion = await store.completeRun({
       sessionId: `${provider}:${sessionId}`,
       ...turnId ? { turnId } : {},
       completedAt: (options.now ?? (() => /* @__PURE__ */ new Date()))(),
       outcome,
       completeAll: outcome === "censored"
     });
+    if (completion.created) {
+      const history = await store.history(Number.MAX_SAFE_INTEGER);
+      await syncPendingRuns(history, {
+        dataDir: options.dataDir,
+        maxBatches: 1,
+        timeoutMs: 1500
+      }).catch(() => void 0);
+    }
   } catch {
   }
   return {};
@@ -13804,7 +14042,7 @@ __export(util_exports, {
   hexToUint8Array: () => hexToUint8Array,
   hide: () => hide,
   installLazyProp: () => installLazyProp,
-  isObject: () => isObject2,
+  isObject: () => isObject3,
   isPlainObject: () => isPlainObject,
   issue: () => issue,
   joinValues: () => joinValues,
@@ -13973,7 +14211,7 @@ function slugify(input2) {
 }
 var captureStackTrace = "captureStackTrace" in Error ? Error.captureStackTrace : (..._args) => {
 };
-function isObject2(data) {
+function isObject3(data) {
   return typeof data === "object" && data !== null && !Array.isArray(data);
 }
 var allowsEval = /* @__PURE__ */ cached(() => {
@@ -13992,7 +14230,7 @@ var allowsEval = /* @__PURE__ */ cached(() => {
   }
 });
 function isPlainObject(o) {
-  if (isObject2(o) === false)
+  if (isObject3(o) === false)
     return false;
   const ctor = o.constructor;
   if (ctor === void 0)
@@ -14000,7 +14238,7 @@ function isPlainObject(o) {
   if (typeof ctor !== "function")
     return true;
   const prot = ctor.prototype;
-  if (isObject2(prot) === false)
+  if (isObject3(prot) === false)
     return false;
   if (Object.prototype.hasOwnProperty.call(prot, "isPrototypeOf") === false) {
     return false;
@@ -16688,7 +16926,7 @@ var $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
     }
     return propValues;
   });
-  const isObject3 = isObject2;
+  const isObject4 = isObject3;
   const catchall = def.catchall;
   let value;
   const memo2 = globalConfig.memoizer;
@@ -16696,7 +16934,7 @@ var $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
   inst._zod.parse = (payload, ctx) => {
     value ?? (value = _normalized.value);
     const input2 = payload.value;
-    if (!isObject3(input2)) {
+    if (!isObject4(input2)) {
       payload.issues.push({
         expected: "object",
         code: "invalid_type",
@@ -16815,7 +17053,7 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
     return doc.compile();
   };
   let fastpass;
-  const isObject3 = isObject2;
+  const isObject4 = isObject3;
   const jit = !globalConfig.jitless;
   const allowsEval2 = allowsEval;
   const fastEnabled = jit && allowsEval2.value;
@@ -16824,7 +17062,7 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
   inst._zod.parse = (payload, ctx) => {
     value ?? (value = _normalized.value);
     const input2 = payload.value;
-    if (!isObject3(input2)) {
+    if (!isObject4(input2)) {
       payload.issues.push({
         expected: "object",
         code: "invalid_type",
@@ -17027,7 +17265,7 @@ var $ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("$ZodDiscriminatedUnio
   });
   inst._zod.parse = (payload, ctx) => {
     const input2 = payload.value;
-    if (!isObject2(input2)) {
+    if (!isObject3(input2)) {
       payload.issues.push({
         code: "invalid_type",
         expected: "object",
@@ -38219,9 +38457,11 @@ Usage:
   agent-eta backtest [--json]
   agent-eta history [--limit 20] [--json]
   agent-eta history-import FILE [--provider auto|codex|claude] [--json]
+  agent-eta sync connect|now|status|disconnect [--json]
   agent-eta mcp
 
 When estimate has no prompt argument, Agent ETA reads the prompt from stdin.
+Connect safely with: pbpaste | agent-eta sync connect
 History imports are experimental. Raw prompts and code are never persisted.`;
 var CliError = class extends Error {
 };
@@ -38477,6 +38717,51 @@ async function historyImportCommand(args) {
   }
   output2(`Experimental ${result.adapter}: imported ${result.importedRuns}, duplicates ${result.duplicateRuns}, skipped ${result.skippedRuns}.`, false);
 }
+async function syncCommand(args) {
+  const action = args.positionals[0] ?? "status";
+  const dataDir = optionString(args, "data-dir");
+  const store = new CalibrationStore({ dataDir });
+  const history = await store.history(Number.MAX_SAFE_INTEGER);
+  if (action === "connect") {
+    const connectionCode = await readPromptFromStdin();
+    if (!connectionCode) throw new CliError("Copy a connection code, then run: pbpaste | agent-eta sync connect");
+    await saveCloudSyncConnection(connectionCode, { dataDir });
+    const result = await syncPendingRuns(history, { dataDir });
+    if (args.options.json) output2(result, true);
+    else {
+      output2(`Connected \xB7 ${result.synced} existing run${result.synced === 1 ? "" : "s"} synced`, false);
+      if (result.pending > 0) output2(`${result.pending} pending \xB7 Agent ETA will retry automatically`, false);
+    }
+    if (result.error) throw new CliError(`Connected, but the first sync failed: ${result.error}`);
+    return;
+  }
+  if (action === "now") {
+    const result = await syncPendingRuns(history, { dataDir });
+    if (args.options.json) output2(result, true);
+    else if (!result.configured) output2("Not connected \xB7 create a connection from agentestimate.vercel.app", false);
+    else output2(`Synced ${result.synced} \xB7 ${result.pending} pending`, false);
+    if (result.error) throw new CliError(result.error);
+    return;
+  }
+  if (action === "status") {
+    const result = await cloudSyncStatus(history, { dataDir });
+    if (args.options.json) output2(result, true);
+    else if (!result.configured) output2("Not connected", false);
+    else {
+      output2(`Connected \xB7 ${result.pending} pending`, false);
+      if (result.lastSuccessAt) output2(`Last synced ${result.lastSuccessAt}`, false);
+      if (result.error) output2(`Last error ${result.error}`, false);
+    }
+    return;
+  }
+  if (action === "disconnect") {
+    const removed = await disconnectCloudSync({ dataDir });
+    const result = { disconnected: removed };
+    output2(args.options.json ? result : removed ? "Disconnected" : "Already disconnected", Boolean(args.options.json));
+    return;
+  }
+  throw new CliError(`Unknown sync action: ${action}`);
+}
 async function runCli(argv = process.argv.slice(2)) {
   const [command = "help", ...rest] = argv;
   try {
@@ -38493,6 +38778,7 @@ async function runCli(argv = process.argv.slice(2)) {
     else if (command === "backtest") await backtestCommand(args);
     else if (command === "history") await historyCommand(args);
     else if (command === "history-import") await historyImportCommand(args);
+    else if (command === "sync") await syncCommand(args);
     else if (command === "mcp") await runMcpServer({ dataDir: optionString(args, "data-dir") });
     else throw new CliError(`Unknown command: ${command}`);
     return 0;

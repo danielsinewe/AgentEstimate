@@ -6,6 +6,7 @@ import { coverageAssessment } from './coverage';
 import {
   bootstrapOAuthCallback,
   getPublicDashboardSnapshot,
+  subscribeToPublicDashboard,
   type PublicDashboardSnapshot,
 } from './lib/supabase';
 import './landing.css';
@@ -20,9 +21,8 @@ function providerLabel(provider: string): string {
 
 function dateLabel(timestamp: string): string {
   return new Intl.DateTimeFormat(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
+    dateStyle: 'medium',
+    timeStyle: 'short',
   }).format(new Date(timestamp));
 }
 
@@ -41,14 +41,29 @@ export default function LandingPage() {
     }
 
     let active = true;
-    void getPublicDashboardSnapshot().then((result) => {
+    const refreshSnapshot = async (showLoading = false) => {
+      if (showLoading) setLoading(true);
+      const result = await getPublicDashboardSnapshot();
       if (!active) return;
-      if (result.ok) setSnapshot(result.data);
-      else setError(result.message);
+      if (result.ok) {
+        setSnapshot(result.data);
+        setError(null);
+      } else setError(result.message);
       setLoading(false);
-    });
+    };
+
+    void refreshSnapshot(true);
+    const unsubscribe = subscribeToPublicDashboard(() => void refreshSnapshot());
+    const interval = window.setInterval(() => void refreshSnapshot(), 30_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void refreshSnapshot();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       active = false;
+      unsubscribe?.();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 
@@ -107,7 +122,7 @@ export default function LandingPage() {
 
           {loading ? (
             <div className="public-state" role="status"><RefreshCw size={18} /> Loading public data…</div>
-          ) : error ? (
+          ) : error && !snapshot ? (
             <div className="public-state public-state-error" role="alert">Public data is temporarily unavailable.</div>
           ) : !snapshot ? (
             <div className="public-state" role="status">The first public snapshot is being prepared.</div>

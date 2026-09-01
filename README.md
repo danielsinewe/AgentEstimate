@@ -74,6 +74,15 @@ node packages/integration/dist/cli.mjs history --limit 20
 node packages/integration/dist/cli.mjs estimate "Audit auth" --json
 ```
 
+To keep the private cloud history and public aggregate current, sign in on the
+[Overview](https://agentestimate.vercel.app/overview), turn on private sync, and click **Copy connection**. Then run:
+
+```bash
+pbpaste | agent-eta sync connect
+```
+
+That one-time connection uploads completed derived metrics and retries automatically after later runs. Check it with `agent-eta sync status`, retry immediately with `agent-eta sync now`, or remove the local credential with `agent-eta sync disconnect`. Delivery is idempotent: retrying the same run does not create a second sample.
+
 Historical JSONL import exists for experiments, but provider transcript formats are not stable APIs:
 
 ```bash
@@ -176,17 +185,17 @@ Raw prompts are processed in memory and are not copied into Agent ETA history. S
 - forecast quantiles, timestamps, elapsed duration, and outcome;
 - install-salted identifiers for runs, sessions, and repositories.
 
-The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. An account is optional. If you sign in and turn on private sync, only the allowlisted derived run fields are stored in Agent ETA's isolated schema in the shared Supabase project. Signing in or enabling sync never uploads existing browser history; that requires a separate, explicit import. Cloud history can be exported or deleted, and deleting Agent ETA data never deletes the shared login identity.
+The web app stores derived calibration samples in that browser's `localStorage` and includes a reset control. An account is optional. If you sign in and turn on private sync, only the allowlisted derived run fields are stored in Agent ETA's isolated schema in the shared Supabase project. Signing in or enabling sync never uploads existing browser or plugin history. Browser history requires a separate explicit import; plugin history requires a separate one-time connection code. Plugin delivery uses a revocable credential stored with owner-only permissions, retries an idempotent outbox, and never sends prompts, source code, repository names, paths, sessions, or account IDs. Cloud history can be exported or deleted, and deleting Agent ETA data never deletes the shared login identity.
 
 Benchmark contribution is a second, independent opt-in for future completed runs. Contributions stay tied to your private account so you can retract them; raw rows are never public. A service-only aggregation can publish grouped results only after a cohort contains at least 25 runs from 20 distinct contributors. Prompts, code, repository names, paths, and individual runs are not part of the public dataset.
 
-The landing-page dashboard is a separate owner-published snapshot. Only explicitly enabled owners are included, and the public table contains aggregate counts, medians, coverage, and task/provider breakdowns—never user IDs, run IDs, or individual records.
+The landing-page dashboard is a separate owner-published snapshot. Only explicitly enabled owners are included, and the public table contains aggregate counts, medians, coverage, and task/provider breakdowns—never user IDs, run IDs, or individual records. Eligible updates are pushed live, with a 30-second polling fallback and a refresh whenever the page becomes visible again.
 
 The CLI/plugin store defaults to `~/.agent-eta/runs.jsonl`, or `$XDG_DATA_HOME/agent-eta/runs.jsonl` when configured. Codex/Claude plugin data directories override that location; an explicit `AGENT_ETA_DATA_DIR` takes highest priority. On supported systems the directory is created with mode `0700` and the files with mode `0600`.
 
 Hook payloads do not consistently expose the active model, effort, or speed setting. Agent ETA uses any values the host supplies and keeps fallback configuration out of the short user-facing forecast. For exact passive forecasts, set `AGENT_ETA_MODEL`, `AGENT_ETA_EFFORT`, and `AGENT_ETA_SPEED` (`standard` or `fast`) in the environment that launches Codex or Claude Code; `AGENT_ETA_PROVIDER` can be set to `codex` or `claude` when host detection is unavailable. `AGENT_ETA_STRICT=1` blocks a prompt only when no forecast can be produced.
 
-There is no passive product telemetry in the web app, core engine, CLI, hooks, or MCP server. Benchmark contribution occurs only after the separate web opt-in described above.
+There is no passive product telemetry in the web app, core engine, CLI, hooks, or MCP server. Cloud delivery starts only after the user turns on private sync and explicitly connects the plugin. Benchmark contribution remains a second, separate opt-in.
 
 ## Development
 

@@ -1,5 +1,11 @@
 import { pathToFileURL } from 'node:url';
 import { estimateTask } from '@agent-eta/core';
+import {
+  cloudSyncStatus,
+  disconnectCloudSync,
+  saveCloudSyncConnection,
+  syncPendingRuns,
+} from './cloud-sync.js';
 import { runHookProcess } from './hook.js';
 import { importHistoryFile } from './history-import.js';
 import { runMcpServer } from './mcp.js';
@@ -22,9 +28,11 @@ Usage:
   agent-eta backtest [--json]
   agent-eta history [--limit 20] [--json]
   agent-eta history-import FILE [--provider auto|codex|claude] [--json]
+  agent-eta sync connect|now|status|disconnect [--json]
   agent-eta mcp
 
 When estimate has no prompt argument, Agent ETA reads the prompt from stdin.
+Connect safely with: pbpaste | agent-eta sync connect
 History imports are experimental. Raw prompts and code are never persisted.`;
 
 interface ParsedCommandArgs {
@@ -312,6 +320,57 @@ async function historyImportCommand(args: ParsedCommandArgs): Promise<void> {
   output(`Experimental ${result.adapter}: imported ${result.importedRuns}, duplicates ${result.duplicateRuns}, skipped ${result.skippedRuns}.`, false);
 }
 
+async function syncCommand(args: ParsedCommandArgs): Promise<void> {
+  const action = args.positionals[0] ?? 'status';
+  const dataDir = optionString(args, 'data-dir');
+  const store = new CalibrationStore({ dataDir });
+  const history = await store.history(Number.MAX_SAFE_INTEGER);
+
+  if (action === 'connect') {
+    const connectionCode = await readPromptFromStdin();
+    if (!connectionCode) throw new CliError('Copy a connection code, then run: pbpaste | agent-eta sync connect');
+    await saveCloudSyncConnection(connectionCode, { dataDir });
+    const result = await syncPendingRuns(history, { dataDir });
+    if (args.options.json) output(result, true);
+    else {
+      output(`Connected · ${result.synced} existing run${result.synced === 1 ? '' : 's'} synced`, false);
+      if (result.pending > 0) output(`${result.pending} pending · Agent ETA will retry automatically`, false);
+    }
+    if (result.error) throw new CliError(`Connected, but the first sync failed: ${result.error}`);
+    return;
+  }
+
+  if (action === 'now') {
+    const result = await syncPendingRuns(history, { dataDir });
+    if (args.options.json) output(result, true);
+    else if (!result.configured) output('Not connected · create a connection from agentestimate.vercel.app', false);
+    else output(`Synced ${result.synced} · ${result.pending} pending`, false);
+    if (result.error) throw new CliError(result.error);
+    return;
+  }
+
+  if (action === 'status') {
+    const result = await cloudSyncStatus(history, { dataDir });
+    if (args.options.json) output(result, true);
+    else if (!result.configured) output('Not connected', false);
+    else {
+      output(`Connected · ${result.pending} pending`, false);
+      if (result.lastSuccessAt) output(`Last synced ${result.lastSuccessAt}`, false);
+      if (result.error) output(`Last error ${result.error}`, false);
+    }
+    return;
+  }
+
+  if (action === 'disconnect') {
+    const removed = await disconnectCloudSync({ dataDir });
+    const result = { disconnected: removed };
+    output(args.options.json ? result : (removed ? 'Disconnected' : 'Already disconnected'), Boolean(args.options.json));
+    return;
+  }
+
+  throw new CliError(`Unknown sync action: ${action}`);
+}
+
 export async function runCli(argv = process.argv.slice(2)): Promise<number> {
   const [command = 'help', ...rest] = argv;
   try {
@@ -328,6 +387,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
     else if (command === 'backtest') await backtestCommand(args);
     else if (command === 'history') await historyCommand(args);
     else if (command === 'history-import') await historyImportCommand(args);
+    else if (command === 'sync') await syncCommand(args);
     else if (command === 'mcp') await runMcpServer({ dataDir: optionString(args, 'data-dir') });
     else throw new CliError(`Unknown command: ${command}`);
     return 0;

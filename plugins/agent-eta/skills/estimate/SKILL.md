@@ -13,4 +13,4 @@ Treat the result as a forecast, not a promise or a completion percentage. Reposi
 
 Use `current_run` when the user asks about work already in progress. Lead with its short `status`, such as `Working 12 min · within estimate`, rather than inventing a completion percentage. Pass `workspaceRoot` when the active task directory is known; otherwise it returns the latest active run. Use `calibration_status` when they ask how much local evidence supports the estimate. Do not treat quarantined stop boundaries or raw sample count as proof of calibration; observed coverage is the audit signal.
 
-Agent ETA processes prompts locally. Never copy prompts, source code, tool output, secrets, or transcripts into history or other storage.
+Agent ETA processes prompts locally. Never copy prompts, source code, tool output, secrets, or transcripts into history or other storage. If the user explicitly connected private cloud sync, completion hooks may send only the bundled allowlisted derived run metrics; treat a sync failure as retryable telemetry, never as a reason to block the coding task.

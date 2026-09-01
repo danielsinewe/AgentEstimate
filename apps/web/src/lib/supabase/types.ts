@@ -56,6 +56,17 @@ export interface Database {
           included_external_services: boolean;
           included_deploy: boolean;
           destructive: boolean;
+          prompt_characters: number | null;
+          prompt_words: number | null;
+          prompt_lines: number | null;
+          prompt_checklist_items: number | null;
+          repo_file_count: number | null;
+          repo_lines_of_code: number | null;
+          repo_test_file_count: number | null;
+          repo_language_count: number | null;
+          repo_dependency_count: number | null;
+          repo_package_count: number | null;
+          repo_dirty_file_count: number | null;
           forecast_p25_minutes: number | null;
           forecast_p50_minutes: number;
           forecast_p80_minutes: number | null;
@@ -84,6 +95,17 @@ export interface Database {
           included_external_services?: boolean;
           included_deploy?: boolean;
           destructive?: boolean;
+          prompt_characters?: number | null;
+          prompt_words?: number | null;
+          prompt_lines?: number | null;
+          prompt_checklist_items?: number | null;
+          repo_file_count?: number | null;
+          repo_lines_of_code?: number | null;
+          repo_test_file_count?: number | null;
+          repo_language_count?: number | null;
+          repo_dependency_count?: number | null;
+          repo_package_count?: number | null;
+          repo_dirty_file_count?: number | null;
           forecast_p25_minutes?: number | null;
           forecast_p50_minutes: number;
           forecast_p80_minutes?: number | null;
@@ -112,6 +134,17 @@ export interface Database {
           included_external_services?: boolean;
           included_deploy?: boolean;
           destructive?: boolean;
+          prompt_characters?: number | null;
+          prompt_words?: number | null;
+          prompt_lines?: number | null;
+          prompt_checklist_items?: number | null;
+          repo_file_count?: number | null;
+          repo_lines_of_code?: number | null;
+          repo_test_file_count?: number | null;
+          repo_language_count?: number | null;
+          repo_dependency_count?: number | null;
+          repo_package_count?: number | null;
+          repo_dirty_file_count?: number | null;
           forecast_p25_minutes?: number | null;
           forecast_p50_minutes?: number;
           forecast_p80_minutes?: number | null;
@@ -321,6 +354,22 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      plugin_sync_connections: {
+        Row: {
+          id: string;
+          user_id: string;
+          token_hash: string;
+          token_prefix: string;
+          label: string;
+          created_at: string;
+          last_used_at: string | null;
+          revoked_at: string | null;
+          synced_run_count: number;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -336,6 +385,36 @@ export interface Database {
         Args: { p_period_start?: string; p_period_end?: string };
         Returns: number;
       };
+      create_plugin_sync_connection: {
+        Args: { p_label?: string };
+        Returns: Array<{
+          id: string;
+          token: string;
+          token_prefix: string;
+          label: string;
+          created_at: string;
+        }>;
+      };
+      list_plugin_sync_connections: {
+        Args: Record<PropertyKey, never>;
+        Returns: Array<{
+          id: string;
+          token_prefix: string;
+          label: string;
+          created_at: string;
+          last_used_at: string | null;
+          revoked_at: string | null;
+          synced_run_count: number;
+        }>;
+      };
+      revoke_plugin_sync_connection: {
+        Args: { p_connection_id: string };
+        Returns: boolean;
+      };
+      sync_plugin_runs: {
+        Args: { p_token: string; p_runs: Json };
+        Returns: Json;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
@@ -348,6 +427,15 @@ export type SyncSettingsRow = Database['project_agent_eta_v2']['Tables']['user_s
 export type ContributionRow = Database['project_agent_eta_v2']['Tables']['benchmark_contributions']['Row'];
 export type PublicMetricSnapshot = Database['project_agent_eta_v2']['Tables']['public_metric_snapshots']['Row'];
 export type PublicDashboardSnapshotRow = Database['project_agent_eta_v2']['Tables']['public_dashboard_snapshots']['Row'];
+
+export interface PluginSyncConnection {
+  id: string;
+  tokenPrefix: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  syncedRunCount: number;
+}
 
 export type PublicDashboardSnapshot = Omit<
   PublicDashboardSnapshotRow,

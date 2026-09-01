@@ -103,3 +103,28 @@ export async function getPublicDashboardSnapshot(
     ? { ok: true, data: parsed }
     : remoteFailure('The public dashboard returned an invalid snapshot.');
 }
+
+/** Uses Realtime when available; callers should keep a slow polling fallback. */
+export function subscribeToPublicDashboard(
+  onChange: () => void,
+  environment?: SupabaseEnvironment,
+): (() => void) | null {
+  const client = getSupabaseClient(environment);
+  if (!client) return null;
+  const channel = client
+    .channel('agent-eta-public-dashboard')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'project_agent_eta_v2',
+        table: 'public_dashboard_snapshots',
+        filter: 'snapshot_key=eq.main',
+      },
+      onChange,
+    )
+    .subscribe();
+  return () => {
+    void client.removeChannel(channel);
+  };
+}

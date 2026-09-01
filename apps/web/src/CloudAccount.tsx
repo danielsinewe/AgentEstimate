@@ -2,7 +2,9 @@ import type { User } from '@supabase/supabase-js';
 import { formatDuration } from '@agent-eta/core';
 import {
   Check,
+  Cable,
   Cloud,
+  Copy,
   Download,
   LockKeyhole,
   LogOut,
@@ -22,7 +24,10 @@ import {
   getSyncSettings,
   importLocalHistory,
   isCloudDataConfigured,
+  createPluginSyncConnection,
+  listPluginSyncConnections,
   listPrivateRuns,
+  revokePluginSyncConnection,
   setBenchmarkContributionEnabled,
   setCloudSyncEnabled,
   signInWithGitHub,
@@ -30,6 +35,7 @@ import {
   subscribeToAuth,
   type CloudResult,
   type LocalRunInput,
+  type PluginSyncConnection,
   type PrivateRunRow,
   type SyncSettings,
 } from './lib/supabase';
@@ -79,6 +85,7 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
   const [user, setUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<SyncSettings>(DEFAULT_SETTINGS);
   const [cloudRuns, setCloudRuns] = useState<PrivateRunRow[]>([]);
+  const [pluginConnections, setPluginConnections] = useState<PluginSyncConnection[]>([]);
   const [loadingAccount, setLoadingAccount] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +94,7 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
+  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const configured = isCloudDataConfigured();
 
   const completedRuns = useMemo(
@@ -97,15 +105,18 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
   const refreshCloud = useCallback(async () => {
     setBusy('refresh');
     setError(null);
-    const [settingsResult, runsResult] = await Promise.all([
+    const [settingsResult, runsResult, connectionsResult] = await Promise.all([
       getSyncSettings(),
       listPrivateRuns(),
+      listPluginSyncConnections(),
     ]);
 
     if (settingsResult.ok) setSettings(settingsResult.data);
     if (runsResult.ok) setCloudRuns(runsResult.data);
+    if (connectionsResult.ok) setPluginConnections(connectionsResult.data);
     if (!settingsResult.ok) setError(settingsResult.message);
     else if (!runsResult.ok) setError(runsResult.message);
+    else if (!connectionsResult.ok) setError(connectionsResult.message);
     setBusy(null);
   }, []);
 
@@ -119,6 +130,7 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
       setConfirmDeleteId(null);
       setConfirmDeleteAll(false);
       setConfirmDeleteAccount(false);
+      setConfirmRevokeId(null);
     }
   }, [open]);
 
@@ -149,6 +161,7 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
     else {
       setSettings(DEFAULT_SETTINGS);
       setCloudRuns([]);
+      setPluginConnections([]);
     }
   }, [refreshCloud, user]);
 
@@ -208,6 +221,44 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
         ? 'Benchmark contribution is on for future eligible runs.'
         : 'Benchmark contribution is off.');
     }
+    setBusy(null);
+  }
+
+  async function handleCreatePluginConnection() {
+    setBusy('plugin-connect');
+    setError(null);
+    setNotice(null);
+    const result = await createPluginSyncConnection();
+    if (!result.ok) {
+      setError(result.message);
+      setBusy(null);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(result.data.connectionCode);
+      setPluginConnections((current) => [result.data.connection, ...current]);
+      setNotice('Connection copied. Run: pbpaste | agent-eta sync connect');
+    } catch {
+      await revokePluginSyncConnection(result.data.connection.id);
+      setError('Clipboard access failed, so the unused connection was revoked. Try again.');
+    }
+    setBusy(null);
+  }
+
+  async function handleRevokePluginConnection(connectionId: string) {
+    if (confirmRevokeId !== connectionId) {
+      setConfirmRevokeId(connectionId);
+      return;
+    }
+    setBusy(`revoke-${connectionId}`);
+    setError(null);
+    const result = await revokePluginSyncConnection(connectionId);
+    if (!result.ok) setError(result.message);
+    else {
+      setPluginConnections((current) => current.filter((connection) => connection.id !== connectionId));
+      setNotice('Plugin connection revoked.');
+    }
+    setConfirmRevokeId(null);
     setBusy(null);
   }
 
@@ -402,6 +453,49 @@ export function CloudAccount({ open, onClose, localRuns, deleteAccount }: CloudA
                   {confirmImport ? `Confirm import ${localRuns.length}` : `Import ${localRuns.length} local runs`}
                 </button>
               </div>
+            </section>
+
+            <section className="cloud-plugin-sync" aria-labelledby="plugin-sync-title">
+              <div className="cloud-section-heading">
+                <div>
+                  <h3 id="plugin-sync-title"><Cable size={14} /> Codex / Claude Code</h3>
+                  <p>Sync completed run metrics automatically. Never prompts, code, names, or paths.</p>
+                </div>
+                <button
+                  className="cloud-button"
+                  type="button"
+                  onClick={() => void handleCreatePluginConnection()}
+                  disabled={!settings.cloudSyncEnabled || busy !== null}
+                >
+                  <Copy size={14} /> {busy === 'plugin-connect' ? 'Creating…' : 'Copy connection'}
+                </button>
+              </div>
+              {!settings.cloudSyncEnabled && <small>Turn on private cloud sync first.</small>}
+              {pluginConnections.length > 0 && (
+                <ul className="cloud-connection-list">
+                  {pluginConnections.map((connection) => (
+                    <li key={connection.id}>
+                      <span>
+                        <strong>{connection.label}</strong>
+                        <small>{connection.lastUsedAt ? `Last used ${runDate(connection.lastUsedAt)}` : 'Not used yet'} · {connection.syncedRunCount} synced</small>
+                      </span>
+                      <div className="cloud-confirm-actions">
+                        {confirmRevokeId === connection.id && (
+                          <button className="cloud-text-button" type="button" onClick={() => setConfirmRevokeId(null)}>Cancel</button>
+                        )}
+                        <button
+                          className="cloud-text-button cloud-danger"
+                          type="button"
+                          onClick={() => void handleRevokePluginConnection(connection.id)}
+                          disabled={busy !== null}
+                        >
+                          {confirmRevokeId === connection.id ? 'Confirm revoke' : 'Revoke'}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
 
             <section className="cloud-history" aria-labelledby="cloud-history-title">

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { estimateTask } from '@agent-eta/core';
+import { syncPendingRuns } from './cloud-sync.js';
 import {
   derivePromptFeatures,
   normalizeEffort,
@@ -225,13 +226,21 @@ async function handleCompletion(
   try {
     const store = new CalibrationStore({ dataDir: options.dataDir });
     const turnId = asString(input.turn_id) ?? asString(input.turnId);
-    await store.completeRun({
+    const completion = await store.completeRun({
       sessionId: `${provider}:${sessionId}`,
       ...(turnId ? { turnId } : {}),
       completedAt: (options.now ?? (() => new Date()))(),
       outcome,
       completeAll: outcome === 'censored',
     });
+    if (completion.created) {
+      const history = await store.history(Number.MAX_SAFE_INTEGER);
+      await syncPendingRuns(history, {
+        dataDir: options.dataDir,
+        maxBatches: 1,
+        timeoutMs: 1_500,
+      }).catch(() => undefined);
+    }
   } catch {
     // Lifecycle hooks are telemetry, never a gate for the coding agent.
   }

@@ -26,3 +26,4 @@ export type {
   StoredRunFeatures,
   TaskClass,
 } from './types.js';
+export * from './cloud-sync.js';
