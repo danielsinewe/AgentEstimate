@@ -37,9 +37,14 @@ describe('crawler-facing web shell', () => {
       read('vercel.json'),
       read('apps/web/public/404.html'),
     ]);
-    const config = JSON.parse(vercel) as { rewrites?: Array<{ source: string; destination: string }> };
+    const config = JSON.parse(vercel) as {
+      rewrites?: Array<{ source: string; destination: string }>;
+      headers?: Array<{ headers?: Array<{ key: string; value: string }> }>;
+    };
 
     expect(config.rewrites).toEqual([{ source: '/overview', destination: '/' }]);
+    expect(config.headers?.[0]?.headers?.find((header) => header.key === 'Content-Security-Policy')?.value)
+      .toContain('wss://qrdgyonmrznmrauyiesn.supabase.co');
     expect(notFound).toContain('<meta name="robots" content="noindex" />');
     expect(notFound.match(/<a\s/gu)).toHaveLength(2);
   });
