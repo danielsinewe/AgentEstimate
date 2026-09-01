@@ -8,8 +8,10 @@
     <meta property="og:title" content="Agent ETA — Real coding-agent timing data" />
     <meta property="og:description" content="See how often coding agents finish inside their promised planning window." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/og-card.svg" />
+    <meta property="og:url" content="https://agentestimate.vercel.app/" />
+    <meta property="og:image" content="https://agentestimate.vercel.app/og-card.svg" />
     <meta name="twitter:card" content="summary_large_image" />
+    <link rel="canonical" href="https://agentestimate.vercel.app/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Agent ETA — Real coding-agent timing data</title>
@@ -26,7 +28,16 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main>
+        <h1>Agent ETA</h1>
+        <p>Real return-time forecasts for Codex and Claude Code.</p>
+        <nav aria-label="Agent ETA links">
+          <a href="/overview">My runs</a>
+          <a href="https://github.com/danielsinewe/AgentEstimate">Get the integration</a>
+        </nav>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

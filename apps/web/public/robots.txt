@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /overview
+
+Sitemap: https://agentestimate.vercel.app/sitemap.xml
