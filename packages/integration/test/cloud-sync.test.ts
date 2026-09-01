@@ -57,7 +57,7 @@ describe('privacy-safe plugin cloud sync', () => {
       expect(headers.apikey).toBe(CONNECTION.publishableKey);
       expect(headers.Authorization).toBeUndefined();
       expect(headers['Content-Profile']).toBe('project_agent_eta_v2');
-      return new Response(JSON.stringify({ runIds: [runId], syncedAt: '2026-09-01T08:13:00.000Z' }), {
+      return new Response(JSON.stringify({ accepted: 0, runIds: [], syncedAt: '2026-09-01T08:13:00.000Z' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });

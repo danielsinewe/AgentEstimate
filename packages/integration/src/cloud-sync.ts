@@ -236,14 +236,26 @@ async function uploadBatch(
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new Error(safeRemoteMessage(body));
-    if (!isObject(body) || !Array.isArray(body.runIds) || typeof body.syncedAt !== 'string') {
+    if (
+      !isObject(body)
+      || !Array.isArray(body.runIds)
+      || typeof body.accepted !== 'number'
+      || !Number.isInteger(body.accepted)
+      || body.accepted < 0
+      || body.accepted > batch.length
+      || typeof body.syncedAt !== 'string'
+    ) {
       throw new Error('Cloud sync returned an invalid response.');
     }
-    const expected = new Set(batch.map((run) => run.client_run_id));
-    const runIds = body.runIds.filter(
-      (id): id is string => typeof id === 'string' && expected.has(id),
-    );
-    return { runIds, syncedAt: body.syncedAt };
+    const expected = batch.map((run) => run.client_run_id);
+    const expectedSet = new Set(expected);
+    if (!body.runIds.every((id) => typeof id === 'string' && expectedSet.has(id))) {
+      throw new Error('Cloud sync returned an invalid response.');
+    }
+    // A successful transaction can legitimately return fewer changed ids when
+    // the same run already exists as an explicit browser import. Every row in
+    // the validated batch is still delivered and must leave the local outbox.
+    return { runIds: expected, syncedAt: body.syncedAt };
   } finally {
     clearTimeout(timeout);
   }

@@ -1606,14 +1606,15 @@ async function uploadBatch(connection, batch, options) {
     });
     const body = await response.json().catch(() => null);
     if (!response.ok) throw new Error(safeRemoteMessage(body));
-    if (!isObject2(body) || !Array.isArray(body.runIds) || typeof body.syncedAt !== "string") {
+    if (!isObject2(body) || !Array.isArray(body.runIds) || typeof body.accepted !== "number" || !Number.isInteger(body.accepted) || body.accepted < 0 || body.accepted > batch.length || typeof body.syncedAt !== "string") {
       throw new Error("Cloud sync returned an invalid response.");
     }
-    const expected = new Set(batch.map((run) => run.client_run_id));
-    const runIds = body.runIds.filter(
-      (id) => typeof id === "string" && expected.has(id)
-    );
-    return { runIds, syncedAt: body.syncedAt };
+    const expected = batch.map((run) => run.client_run_id);
+    const expectedSet = new Set(expected);
+    if (!body.runIds.every((id) => typeof id === "string" && expectedSet.has(id))) {
+      throw new Error("Cloud sync returned an invalid response.");
+    }
+    return { runIds: expected, syncedAt: body.syncedAt };
   } finally {
     clearTimeout(timeout);
   }
