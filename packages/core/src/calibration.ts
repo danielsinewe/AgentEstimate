@@ -8,10 +8,12 @@ import type {
   TaskClass,
 } from './types.js';
 
-const CALIBRATION_BOUNDS = [0.55, 1.8] as const;
-const LEARNING_RATIO_BOUNDS = [0.08, 8] as const;
-const ROBUST_RATIO_BOUNDS = [0.25, 4] as const;
-const CENTER_PRIOR_STRENGTH = 8;
+const CALIBRATION_BOUNDS = [0.03, 1.8] as const;
+const BASELINE_LEARNING_RATIO_BOUNDS = [0.002, 20] as const;
+const LEGACY_LEARNING_RATIO_BOUNDS = [0.08, 8] as const;
+const ROBUST_RATIO_BOUNDS = [0.01, 8] as const;
+const LEGACY_CENTER_PRIOR_STRENGTH = 8;
+const BASELINE_CENTER_PRIOR_STRENGTH = 1;
 
 interface WeightedValue {
   value: number;
@@ -120,6 +122,42 @@ const candidateSamples = (samples: readonly CalibrationSample[]): CalibrationSam
       sample.actualMinutes > 0,
   );
 
+const positive = (value: number | undefined): value is number =>
+  Number.isFinite(value) && (value ?? 0) > 0;
+
+const centerBasis = (sample: CalibrationSample): number =>
+  positive(sample.baselineP50Minutes) ? sample.baselineP50Minutes : sample.estimatedMinutes;
+
+const quantileBasis = (
+  sample: CalibrationSample,
+  key: 'estimatedP80Minutes' | 'estimatedP95Minutes',
+): number | undefined => {
+  const baseline = key === 'estimatedP80Minutes'
+    ? sample.baselineP80Minutes
+    : sample.baselineP95Minutes;
+  return positive(baseline) ? baseline : sample[key];
+};
+
+const observedCoverage = (
+  samples: readonly CalibrationSample[],
+  key: 'estimatedMinutes' | 'estimatedP80Minutes',
+  context?: CalibrationContext,
+): number | null => {
+  const measured = samples.filter((sample) => positive(sample[key]));
+  if (measured.length === 0) return null;
+  if (!context) {
+    return round(measured.filter((sample) => sample.actualMinutes <= (sample[key] ?? 0)).length / measured.length);
+  }
+  const weighted = measured.map((sample) => ({ sample, weight: similarityWeight(sample, context) }));
+  const totalWeight = weighted.reduce((sum, sample) => sum + sample.weight, 0);
+  if (totalWeight <= 0) return null;
+  const coveredWeight = weighted.reduce(
+    (sum, { sample, weight }) => sum + (sample.actualMinutes <= (sample[key] ?? 0) ? weight : 0),
+    0,
+  );
+  return round(coveredWeight / totalWeight);
+};
+
 const similarityWeight = (sample: CalibrationSample, target: CalibrationContext): number => {
   let weight = 0.28;
   if (target.provider && sample.provider) weight *= sample.provider === target.provider ? 1.75 : 0.55;
@@ -170,7 +208,7 @@ const coverageMultiplier = (
   fallback: number,
 ): number => {
   const values = samples.flatMap(({ sample, weight }) => {
-    const estimate = sample[key];
+    const estimate = quantileBasis(sample, key);
     if (!Number.isFinite(estimate) || (estimate ?? 0) <= 0) return [];
     return [{
       value: Math.log(clamp(sample.actualMinutes / (estimate ?? 1), ...ROBUST_RATIO_BOUNDS)),
@@ -179,7 +217,13 @@ const coverageMultiplier = (
   });
   if (values.length < minimumSamples) return fallback;
   const rawCorrection = weightedQuantile(values, probability);
-  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + (probability >= 0.95 ? 18 : 12));
+  const baselineEvidence = samples.some(({ sample }) => positive(
+    probability >= 0.95 ? sample.baselineP95Minutes : sample.baselineP80Minutes,
+  ));
+  const priorStrength = baselineEvidence
+    ? (probability >= 0.95 ? 8 : 4)
+    : (probability >= 0.95 ? 18 : 12);
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + priorStrength);
   return clamp(Math.exp(rawCorrection * evidenceWeight), ...CALIBRATION_BOUNDS);
 };
 
@@ -195,8 +239,11 @@ export const calibrate = (
   const candidates = candidateSamples(samples);
   const target = normalizeContext(context);
   const usable = candidates.filter((sample) => {
-    const ratio = sample.actualMinutes / sample.estimatedMinutes;
-    return ratio >= LEARNING_RATIO_BOUNDS[0] && ratio <= LEARNING_RATIO_BOUNDS[1];
+    const ratio = sample.actualMinutes / centerBasis(sample);
+    const bounds = positive(sample.baselineP50Minutes)
+      ? BASELINE_LEARNING_RATIO_BOUNDS
+      : LEGACY_LEARNING_RATIO_BOUNDS;
+    return ratio >= bounds[0] && ratio <= bounds[1];
   });
   const excludedSampleCount = candidates.length - usable.length;
 
@@ -209,6 +256,8 @@ export const calibrate = (
       matchedSampleCount: 0,
       effectiveSampleCount: 0,
       excludedSampleCount,
+      observedP50Coverage: observedCoverage(candidates, 'estimatedMinutes', target),
+      observedP80Coverage: observedCoverage(candidates, 'estimatedP80Minutes', target),
       level: 'none',
       applied: false,
       bounds: CALIBRATION_BOUNDS,
@@ -218,10 +267,14 @@ export const calibrate = (
   const weighted = usable.map((sample) => ({
     sample,
     weight: similarityWeight(sample, target),
-    logRatio: Math.log(clamp(sample.actualMinutes / sample.estimatedMinutes, ...ROBUST_RATIO_BOUNDS)),
+    logRatio: Math.log(clamp(sample.actualMinutes / centerBasis(sample), ...ROBUST_RATIO_BOUNDS)),
   }));
   const effectiveSampleCount = weighted.reduce((sum, sample) => sum + sample.weight, 0);
-  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + CENTER_PRIOR_STRENGTH);
+  const hasBaselineEvidence = weighted.some(({ sample }) => positive(sample.baselineP50Minutes));
+  const centerPriorStrength = hasBaselineEvidence
+    ? BASELINE_CENTER_PRIOR_STRENGTH
+    : LEGACY_CENTER_PRIOR_STRENGTH;
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + centerPriorStrength);
   const multiplier = clamp(Math.exp(robustLogCenter(weighted) * evidenceWeight), ...CALIBRATION_BOUNDS);
   const dispersionMultiplier = robustDispersionMultiplier(weighted, effectiveSampleCount);
   const p80Multiplier = coverageMultiplier(
@@ -257,6 +310,8 @@ export const calibrate = (
     matchedSampleCount,
     effectiveSampleCount: round(effectiveSampleCount),
     excludedSampleCount,
+    observedP50Coverage: observedCoverage(candidates, 'estimatedMinutes', target),
+    observedP80Coverage: observedCoverage(candidates, 'estimatedP80Minutes', target),
     level,
     applied:
       Math.abs(roundedMultiplier - 1) >= 0.005 ||

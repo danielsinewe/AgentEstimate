@@ -345,7 +345,7 @@ export async function importHistoryFile(path: string, options: HistoryImportOpti
         prompt: promptFeatures,
         repo,
       }),
-      estimate: toStoredEstimate(estimate),
+      estimate: toStoredEstimate(estimate, estimate),
     });
     if (imported) importedRuns += 1;
     else duplicateRuns += 1;

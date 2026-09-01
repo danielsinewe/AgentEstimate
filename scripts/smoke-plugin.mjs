@@ -53,6 +53,25 @@ function runCommand(command, input, environment = {}) {
   });
 }
 
+function runExecutable(command, args, environment = {}) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, args, {
+      cwd: repositoryRoot,
+      env: { ...process.env, AGENT_ETA_DATA_DIR: dataDir, ...environment },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += String(chunk); });
+    child.stderr.on('data', (chunk) => { stderr += String(chunk); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) return reject(new Error(`Plugin command exited ${code}: ${stderr}`));
+      resolvePromise({ stdout, stderr });
+    });
+  });
+}
+
 const privatePromptMarker = 'SMOKE-PRIVATE-PROMPT-9182';
 const sessionId = 'smoke-visible-session';
 const turnId = 'smoke-turn';
@@ -168,6 +187,17 @@ if (mcpTools.join(',') !== 'calibration_status,current_run,estimate_task') {
   throw new Error(`Plugin MCP handshake exposed unexpected tools: ${mcpTools.join(', ')}`);
 }
 
+const cliResult = await runExecutable('node', [
+  join(pluginRoot, 'dist', 'cli.mjs'),
+  'estimate',
+  'Reply only OK',
+  '--json',
+]);
+const cliEstimate = JSON.parse(cliResult.stdout);
+if (cliEstimate.analysis?.taskClass !== 'question' || typeof cliEstimate.minutes?.p50 !== 'number') {
+  throw new Error('Bundled CLI did not return one clean estimate');
+}
+
 process.stdout.write(`${JSON.stringify({
   submitHookMs: submitted.elapsedMs,
   completionHookMs: completed.elapsedMs,
@@ -180,4 +210,5 @@ process.stdout.write(`${JSON.stringify({
   persistedRecords: records.length,
   rawInputPersisted: false,
   mcpTools,
+  cliOutputClean: true,
 }, null, 2)}\n`);

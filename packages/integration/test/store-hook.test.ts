@@ -87,6 +87,7 @@ describe('CalibrationStore', () => {
     expect(await store.records()).toHaveLength(6);
     expect(await store.calibrationStatus()).toEqual({
       state: 'cold-start',
+      reliability: 'unproven',
       startedRuns: 3,
       completedRuns: 3,
       successfulRuns: 2,
@@ -96,6 +97,7 @@ describe('CalibrationStore', () => {
       censoredRuns: 0,
       medianActualMinutes: 9,
       medianAbsoluteErrorMinutes: 1,
+      medianSignedErrorMinutes: 1,
       p50ObservedCoverage: 1,
       p80ObservedCoverage: 1,
     });

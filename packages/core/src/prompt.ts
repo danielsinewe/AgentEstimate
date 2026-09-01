@@ -66,6 +66,34 @@ const countMatches = (value: string, pattern: RegExp): number => {
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(maximum, Math.max(minimum, value));
 
+const AMBIENT_CONTEXT_PATTERN = /<in-app-browser-context\b[^>]*>[\s\S]*?<\/in-app-browser-context>/giu;
+const MY_REQUEST_PATTERN = /^##\s+My request:\s*$/gimu;
+const RETROSPECTIVE_ETA_PATTERN = /\bOriginal ETA:\s*⏱/iu;
+
+/**
+ * Keeps host-provided UI state and pasted completion evidence from becoming
+ * prospective work. The returned text stays in memory and is never persisted.
+ */
+const actionablePrompt = (prompt: string): string => {
+  let focused = prompt.replace(AMBIENT_CONTEXT_PATTERN, ' ').trim();
+  const requestMarkers = [...focused.matchAll(MY_REQUEST_PATTERN)];
+  const lastRequest = requestMarkers.at(-1);
+  if (lastRequest?.index !== undefined) {
+    focused = focused.slice(lastRequest.index + lastRequest[0].length).trim();
+  }
+
+  // A common feedback shape is a short ETA question followed by a pasted
+  // completion report. Treat the report as evidence, not a new deployment task.
+  if (RETROSPECTIVE_ETA_PATTERN.test(focused)) {
+    const leadingQuestion = focused.match(/^([\s\S]{1,280}?\?)(?:\s+Worked for\s+\d|\s*\n)/iu)?.[1];
+    if (leadingQuestion && /\b(?:estimat(?:e|ed|es|ing|ion)?|eta|forecast|tim(?:e|ing))\b/iu.test(leadingQuestion)) {
+      return leadingQuestion.trim();
+    }
+  }
+
+  return focused;
+};
+
 const classifyTask = (prompt: string): TaskClass => {
   if (
     /^(?:please\s+)?(?:answer|output|print|reply|respond|return|say)\b/i.test(prompt.trim()) &&
@@ -107,7 +135,7 @@ const ambiguityFromScore = (score: number): AmbiguityLevel => {
  * This function is pure and has no storage or network side effects.
  */
 export const analyzePrompt = (prompt: string): PromptAnalysis => {
-  const normalized = prompt.trim();
+  const normalized = actionablePrompt(prompt);
   const words = normalized.match(/[\p{L}\p{N}_'-]+/gu) ?? [];
   const wordCount = words.length;
   const actionCount = countMatches(normalized, ACTION_PATTERN);
@@ -129,7 +157,7 @@ export const analyzePrompt = (prompt: string): PromptAnalysis => {
     scopeScore += 2;
   }
   if (
-    /\b(?:impress me|make (?:the |this )?(?:app|product|site|system|codebase) better|improve (?:the |this )?(?:app|product|site|system|codebase)(?:\s|$))\b/i.test(
+    /\b(?:impress me|make (?:the |this )?(?:app|product|site|system|codebase) better|make it (?:more )?(?:accurate|reliable|trustworthy)|improve (?:the |this )?(?:app|product|site|system|codebase)(?:\s|$))\b/i.test(
       normalized,
     )
   ) {
@@ -145,7 +173,7 @@ export const analyzePrompt = (prompt: string): PromptAnalysis => {
 
   let ambiguityScore = normalized.length === 0 ? 0.9 : 0.34;
   if (
-    /\b(whatever|somehow|i don'?t know|figure it out|impress me|make (?:it|.+) better|improve it|perfect|best possible|as needed|etc\.?|something|doesn'?t work)\b/i.test(
+    /\b(whatever|somehow|i don'?t know|figure it out|impress me|make (?:it|.+) better|make it (?:more )?(?:accurate|reliable|trustworthy)|improve it|perfect|best possible|as needed|etc\.?|something|doesn'?t work)\b/i.test(
       normalized,
     )
   ) {

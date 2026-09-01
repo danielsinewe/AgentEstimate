@@ -100,6 +100,14 @@ The server exposes three read-only tools:
 - `current_run` reads the latest non-stale hook-tracked run for a repository.
 - `calibration_status` reports sample counts, median error, and observed midpoint and planning-bound coverage.
 
+Audit a candidate calibration against every completed local run without training on that run itself:
+
+```bash
+agent-eta backtest
+```
+
+The report compares the original forecasts with leave-one-out candidate forecasts, including median error and 50%/80% coverage targets. High coverage is not automatically good: ranges that catch nearly every run are too wide to be useful.
+
 MCP is excellent for asking for an estimate. Hooks are what make run capture automatic; an agent can otherwise choose not to call an MCP tool.
 
 ### Plugin + hooks

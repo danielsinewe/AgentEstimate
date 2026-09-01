@@ -19,6 +19,7 @@ Usage:
   agent-eta estimate [prompt] [--provider codex|claude] [--model MODEL]
   agent-eta hook [--provider codex|claude]
   agent-eta calibrate [--json]
+  agent-eta backtest [--json]
   agent-eta history [--limit 20] [--json]
   agent-eta history-import FILE [--provider auto|codex|claude] [--json]
   agent-eta mcp
@@ -159,10 +160,116 @@ async function calibrateCommand(args: ParsedCommandArgs): Promise<void> {
     output(status, true);
     return;
   }
-  output(`${status.state} · ${status.eligibleCalibrationRuns} eligible runs`, false);
+  output(`${status.reliability} · ${status.eligibleCalibrationRuns} eligible runs`, false);
   if (status.medianAbsoluteErrorMinutes !== null) {
-    output(`Median error ${status.medianAbsoluteErrorMinutes}m · planning coverage ${Math.round((status.p80ObservedCoverage ?? 0) * 100)}%`, false);
+    output(
+      `Midpoint coverage ${Math.round((status.p50ObservedCoverage ?? 0) * 100)}% (target 50%) · planning coverage ${Math.round((status.p80ObservedCoverage ?? 0) * 100)}% (target 80%)`,
+      false,
+    );
+    output(
+      `Median error ${status.medianAbsoluteErrorMinutes}m · signed bias ${status.medianSignedErrorMinutes ?? 0}m`,
+      false,
+    );
   }
+}
+
+interface BacktestRow {
+  actual: number;
+  originalP50: number;
+  originalP80: number;
+  candidateP50: number;
+  candidateP80: number;
+}
+
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? (sorted[middle] ?? null)
+    : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+function rounded(value: number | null, digits = 3): number | null {
+  if (value === null) return null;
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
+}
+
+function backtestMetrics(rows: readonly BacktestRow[], version: 'original' | 'candidate') {
+  const p50Key = version === 'original' ? 'originalP50' : 'candidateP50';
+  const p80Key = version === 'original' ? 'originalP80' : 'candidateP80';
+  if (rows.length === 0) {
+    return { medianAbsoluteErrorMinutes: null, midpointCoverage: null, planningCoverage: null };
+  }
+  return {
+    medianAbsoluteErrorMinutes: rounded(median(rows.map((row) => Math.abs(row[p50Key] - row.actual))), 2),
+    midpointCoverage: rounded(rows.filter((row) => row.actual <= row[p50Key]).length / rows.length),
+    planningCoverage: rounded(rows.filter((row) => row.actual <= row[p80Key]).length / rows.length),
+  };
+}
+
+async function backtestCommand(args: ParsedCommandArgs): Promise<void> {
+  const store = new CalibrationStore({ dataDir: optionString(args, 'data-dir') });
+  const history = (await store.history(Number.MAX_SAFE_INTEGER)).filter(
+    (entry): entry is RunHistoryEntry & { elapsedMs: number; outcome: 'success' } =>
+      entry.elapsedMs !== undefined && entry.outcome === 'success',
+  );
+  const samples = await store.calibrationSamples(Number.MAX_SAFE_INTEGER);
+  const rows = history.map((entry, index): BacktestRow => {
+    const features = entry.features;
+    const candidate = estimateTask({
+      prompt: '',
+      provider: features.provider,
+      model: features.model,
+      effort: features.effort,
+      speed: features.speed,
+      taskClass: features.prompt.taskClass,
+      options: {
+        scope: features.prompt.scope,
+        ambiguity: features.prompt.ambiguity,
+        external: features.prompt.external,
+        tests: features.prompt.tests,
+        browser: features.prompt.browser,
+        deploy: features.prompt.deploy,
+        destructive: features.prompt.destructive,
+      },
+      repo: features.repo,
+      calibrationSamples: samples.filter((_, sampleIndex) => sampleIndex !== index),
+    });
+    return {
+      actual: entry.elapsedMs / 60_000,
+      originalP50: entry.estimate.minutes.p50,
+      originalP80: entry.estimate.minutes.p80,
+      candidateP50: candidate.minutes.p50,
+      candidateP80: candidate.minutes.p80,
+    };
+  });
+  const result = {
+    method: 'leave-one-out',
+    successfulRuns: rows.length,
+    targets: { midpointCoverage: 0.5, planningCoverage: 0.8 },
+    original: backtestMetrics(rows, 'original'),
+    candidate: backtestMetrics(rows, 'candidate'),
+  };
+
+  if (args.options.json) {
+    output(result, true);
+    return;
+  }
+  if (rows.length === 0) {
+    output('No successful runs to backtest.', false);
+    return;
+  }
+  output(`Leave-one-out backtest · ${rows.length} completed runs`, false);
+  output(
+    `Median error ${result.original.medianAbsoluteErrorMinutes}m → ${result.candidate.medianAbsoluteErrorMinutes}m`,
+    false,
+  );
+  output(
+    `Midpoint ${Math.round((result.candidate.midpointCoverage ?? 0) * 100)}% (target 50%) · planning ${Math.round((result.candidate.planningCoverage ?? 0) * 100)}% (target 80%)`,
+    false,
+  );
 }
 
 function historyLine(entry: RunHistoryEntry): string {
@@ -218,6 +325,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
       const provider = providerOption(optionString(args, 'provider')) as AgentProvider;
       await runHookProcess({ provider, dataDir: optionString(args, 'data-dir') });
     } else if (command === 'calibrate') await calibrateCommand(args);
+    else if (command === 'backtest') await backtestCommand(args);
     else if (command === 'history') await historyCommand(args);
     else if (command === 'history-import') await historyImportCommand(args);
     else if (command === 'mcp') await runMcpServer({ dataDir: optionString(args, 'data-dir') });
@@ -231,7 +339,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<number> {
 
 function isDirectExecution(): boolean {
   const entry = process.argv[1];
-  return Boolean(entry && import.meta.url === pathToFileURL(entry).href);
+  return Boolean(
+    entry &&
+    import.meta.url === pathToFileURL(entry).href &&
+    /\/cli\.(?:mjs|js|ts)$/u.test(new URL(import.meta.url).pathname),
+  );
 }
 
 if (isDirectExecution()) {

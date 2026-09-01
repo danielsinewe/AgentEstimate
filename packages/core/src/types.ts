@@ -52,6 +52,10 @@ export interface CalibrationSample {
   /** Optional upper quantiles enable direct coverage correction as history grows. */
   estimatedP80Minutes?: number;
   estimatedP95Minutes?: number;
+  /** Reproducible uncalibrated quantiles, used to learn an absolute correction. */
+  baselineP50Minutes?: number;
+  baselineP80Minutes?: number;
+  baselineP95Minutes?: number;
   /** Elapsed active time measured after the task finished. */
   actualMinutes: number;
   taskClass?: TaskClass;
@@ -146,6 +150,9 @@ export interface CalibrationResult {
   effectiveSampleCount: number;
   /** Implausible stop boundaries are retained in history but excluded from learning. */
   excludedSampleCount: number;
+  /** Audit metrics from the estimates users actually saw. */
+  observedP50Coverage: number | null;
+  observedP80Coverage: number | null;
   level: CalibrationLevel;
   applied: boolean;
   /** Fixed safety bounds used after robust outlier handling and shrinkage. */

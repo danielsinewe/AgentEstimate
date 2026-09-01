@@ -54,6 +54,24 @@ var countMatches = (value, pattern) => {
   return [...value.matchAll(new RegExp(pattern.source, flags))].length;
 };
 var clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+var AMBIENT_CONTEXT_PATTERN = /<in-app-browser-context\b[^>]*>[\s\S]*?<\/in-app-browser-context>/giu;
+var MY_REQUEST_PATTERN = /^##\s+My request:\s*$/gimu;
+var RETROSPECTIVE_ETA_PATTERN = /\bOriginal ETA:\s*⏱/iu;
+var actionablePrompt = (prompt) => {
+  let focused = prompt.replace(AMBIENT_CONTEXT_PATTERN, " ").trim();
+  const requestMarkers = [...focused.matchAll(MY_REQUEST_PATTERN)];
+  const lastRequest = requestMarkers.at(-1);
+  if (lastRequest?.index !== void 0) {
+    focused = focused.slice(lastRequest.index + lastRequest[0].length).trim();
+  }
+  if (RETROSPECTIVE_ETA_PATTERN.test(focused)) {
+    const leadingQuestion = focused.match(/^([\s\S]{1,280}?\?)(?:\s+Worked for\s+\d|\s*\n)/iu)?.[1];
+    if (leadingQuestion && /\b(?:estimat(?:e|ed|es|ing|ion)?|eta|forecast|tim(?:e|ing))\b/iu.test(leadingQuestion)) {
+      return leadingQuestion.trim();
+    }
+  }
+  return focused;
+};
 var classifyTask = (prompt) => {
   if (/^(?:please\s+)?(?:answer|output|print|reply|respond|return|say)\b/i.test(prompt.trim()) && /\b(?:do not use tools|no tools|only)\b/i.test(prompt)) {
     return "question";
@@ -89,7 +107,7 @@ var ambiguityFromScore = (score) => {
   return "high";
 };
 var analyzePrompt = (prompt) => {
-  const normalized = prompt.trim();
+  const normalized = actionablePrompt(prompt);
   const words = normalized.match(/[\p{L}\p{N}_'-]+/gu) ?? [];
   const wordCount = words.length;
   const actionCount = countMatches(normalized, ACTION_PATTERN);
@@ -111,7 +129,7 @@ var analyzePrompt = (prompt) => {
   if (/\b(entire|end[- ]to[- ]end|full|complete|production[- ]ready|whole|across the|from scratch|perfect app|all pages|all files)\b/i.test(normalized)) {
     scopeScore += 2;
   }
-  if (/\b(?:impress me|make (?:the |this )?(?:app|product|site|system|codebase) better|improve (?:the |this )?(?:app|product|site|system|codebase)(?:\s|$))\b/i.test(normalized)) {
+  if (/\b(?:impress me|make (?:the |this )?(?:app|product|site|system|codebase) better|make it (?:more )?(?:accurate|reliable|trustworthy)|improve (?:the |this )?(?:app|product|site|system|codebase)(?:\s|$))\b/i.test(normalized)) {
     scopeScore += 3;
   }
   if (/\b(?:single|one|only|just)\s+(?:file|line|typo|function|component)\b/i.test(normalized)) {
@@ -122,7 +140,7 @@ var analyzePrompt = (prompt) => {
   }
   scopeScore = clamp(scopeScore, 0, 5);
   let ambiguityScore = normalized.length === 0 ? 0.9 : 0.34;
-  if (/\b(whatever|somehow|i don'?t know|figure it out|impress me|make (?:it|.+) better|improve it|perfect|best possible|as needed|etc\.?|something|doesn'?t work)\b/i.test(normalized)) {
+  if (/\b(whatever|somehow|i don'?t know|figure it out|impress me|make (?:it|.+) better|make it (?:more )?(?:accurate|reliable|trustworthy)|improve it|perfect|best possible|as needed|etc\.?|something|doesn'?t work)\b/i.test(normalized)) {
     ambiguityScore += 0.28;
   }
   if (taskClass !== "question" && fileReferences === 0)
@@ -175,10 +193,12 @@ var analyzePrompt = (prompt) => {
 };
 
 // ../core/dist/calibration.js
-var CALIBRATION_BOUNDS = [0.55, 1.8];
-var LEARNING_RATIO_BOUNDS = [0.08, 8];
-var ROBUST_RATIO_BOUNDS = [0.25, 4];
-var CENTER_PRIOR_STRENGTH = 8;
+var CALIBRATION_BOUNDS = [0.03, 1.8];
+var BASELINE_LEARNING_RATIO_BOUNDS = [2e-3, 20];
+var LEGACY_LEARNING_RATIO_BOUNDS = [0.08, 8];
+var ROBUST_RATIO_BOUNDS = [0.01, 8];
+var LEGACY_CENTER_PRIOR_STRENGTH = 8;
+var BASELINE_CENTER_PRIOR_STRENGTH = 1;
 var clamp2 = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 var round = (value) => Math.round(value * 1e3) / 1e3;
 var weightedQuantile = (items, probability) => {
@@ -247,6 +267,26 @@ var normalizeContext = (context) => {
   };
 };
 var candidateSamples = (samples) => samples.filter((sample) => Number.isFinite(sample.estimatedMinutes) && Number.isFinite(sample.actualMinutes) && sample.estimatedMinutes > 0 && sample.actualMinutes > 0);
+var positive = (value) => Number.isFinite(value) && (value ?? 0) > 0;
+var centerBasis = (sample) => positive(sample.baselineP50Minutes) ? sample.baselineP50Minutes : sample.estimatedMinutes;
+var quantileBasis = (sample, key) => {
+  const baseline = key === "estimatedP80Minutes" ? sample.baselineP80Minutes : sample.baselineP95Minutes;
+  return positive(baseline) ? baseline : sample[key];
+};
+var observedCoverage = (samples, key, context) => {
+  const measured = samples.filter((sample) => positive(sample[key]));
+  if (measured.length === 0)
+    return null;
+  if (!context) {
+    return round(measured.filter((sample) => sample.actualMinutes <= (sample[key] ?? 0)).length / measured.length);
+  }
+  const weighted = measured.map((sample) => ({ sample, weight: similarityWeight(sample, context) }));
+  const totalWeight = weighted.reduce((sum, sample) => sum + sample.weight, 0);
+  if (totalWeight <= 0)
+    return null;
+  const coveredWeight = weighted.reduce((sum, { sample, weight }) => sum + (sample.actualMinutes <= (sample[key] ?? 0) ? weight : 0), 0);
+  return round(coveredWeight / totalWeight);
+};
 var similarityWeight = (sample, target) => {
   let weight = 0.28;
   if (target.provider && sample.provider)
@@ -282,7 +322,7 @@ var calibrationLevel = (samples, target) => {
 };
 var coverageMultiplier = (samples, key, probability, minimumSamples, effectiveSampleCount, fallback) => {
   const values = samples.flatMap(({ sample, weight }) => {
-    const estimate = sample[key];
+    const estimate = quantileBasis(sample, key);
     if (!Number.isFinite(estimate) || (estimate ?? 0) <= 0)
       return [];
     return [{
@@ -293,15 +333,18 @@ var coverageMultiplier = (samples, key, probability, minimumSamples, effectiveSa
   if (values.length < minimumSamples)
     return fallback;
   const rawCorrection = weightedQuantile(values, probability);
-  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + (probability >= 0.95 ? 18 : 12));
+  const baselineEvidence = samples.some(({ sample }) => positive(probability >= 0.95 ? sample.baselineP95Minutes : sample.baselineP80Minutes));
+  const priorStrength = baselineEvidence ? probability >= 0.95 ? 8 : 4 : probability >= 0.95 ? 18 : 12;
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + priorStrength);
   return clamp2(Math.exp(rawCorrection * evidenceWeight), ...CALIBRATION_BOUNDS);
 };
 var calibrate = (samples, context) => {
   const candidates = candidateSamples(samples);
   const target = normalizeContext(context);
   const usable = candidates.filter((sample) => {
-    const ratio = sample.actualMinutes / sample.estimatedMinutes;
-    return ratio >= LEARNING_RATIO_BOUNDS[0] && ratio <= LEARNING_RATIO_BOUNDS[1];
+    const ratio = sample.actualMinutes / centerBasis(sample);
+    const bounds = positive(sample.baselineP50Minutes) ? BASELINE_LEARNING_RATIO_BOUNDS : LEGACY_LEARNING_RATIO_BOUNDS;
+    return ratio >= bounds[0] && ratio <= bounds[1];
   });
   const excludedSampleCount = candidates.length - usable.length;
   if (usable.length === 0) {
@@ -313,6 +356,8 @@ var calibrate = (samples, context) => {
       matchedSampleCount: 0,
       effectiveSampleCount: 0,
       excludedSampleCount,
+      observedP50Coverage: observedCoverage(candidates, "estimatedMinutes", target),
+      observedP80Coverage: observedCoverage(candidates, "estimatedP80Minutes", target),
       level: "none",
       applied: false,
       bounds: CALIBRATION_BOUNDS
@@ -321,10 +366,12 @@ var calibrate = (samples, context) => {
   const weighted = usable.map((sample) => ({
     sample,
     weight: similarityWeight(sample, target),
-    logRatio: Math.log(clamp2(sample.actualMinutes / sample.estimatedMinutes, ...ROBUST_RATIO_BOUNDS))
+    logRatio: Math.log(clamp2(sample.actualMinutes / centerBasis(sample), ...ROBUST_RATIO_BOUNDS))
   }));
   const effectiveSampleCount = weighted.reduce((sum, sample) => sum + sample.weight, 0);
-  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + CENTER_PRIOR_STRENGTH);
+  const hasBaselineEvidence = weighted.some(({ sample }) => positive(sample.baselineP50Minutes));
+  const centerPriorStrength = hasBaselineEvidence ? BASELINE_CENTER_PRIOR_STRENGTH : LEGACY_CENTER_PRIOR_STRENGTH;
+  const evidenceWeight = effectiveSampleCount / (effectiveSampleCount + centerPriorStrength);
   const multiplier = clamp2(Math.exp(robustLogCenter(weighted) * evidenceWeight), ...CALIBRATION_BOUNDS);
   const dispersionMultiplier = robustDispersionMultiplier(weighted, effectiveSampleCount);
   const p80Multiplier = coverageMultiplier(weighted, "estimatedP80Minutes", 0.8, 6, effectiveSampleCount, multiplier);
@@ -345,6 +392,8 @@ var calibrate = (samples, context) => {
     matchedSampleCount,
     effectiveSampleCount: round(effectiveSampleCount),
     excludedSampleCount,
+    observedP50Coverage: observedCoverage(candidates, "estimatedMinutes", target),
+    observedP80Coverage: observedCoverage(candidates, "estimatedP80Minutes", target),
     level,
     applied: Math.abs(roundedMultiplier - 1) >= 5e-3 || Math.abs(roundedDispersion - 1) >= 0.025 || Math.abs(quantileMultipliers.p80 - roundedMultiplier) >= 0.025 || Math.abs(quantileMultipliers.p95 - roundedMultiplier) >= 0.025,
     bounds: CALIBRATION_BOUNDS
@@ -720,15 +769,11 @@ var rankedDrivers = (input, analysis, centers, calibration) => {
   });
   return drivers;
 };
-var confidenceFor = (analysis, minutes, calibrationSamples) => {
+var confidenceFor = (analysis, minutes, calibration) => {
   const spread = Math.round(minutes.p95 / Math.max(0.1, minutes.p50) * 100) / 100;
-  if (analysis.ambiguity === "low" && !analysis.signals.external && (!analysis.signals.deploy || calibrationSamples >= 8)) {
-    return {
-      level: "high",
-      spread,
-      reason: calibrationSamples >= 8 ? "Clear scope with personal history" : "Clear, local scope"
-    };
-  }
+  const enoughHistory = calibration.effectiveSampleCount >= 8;
+  const p50OnTarget = calibration.observedP50Coverage !== null && calibration.observedP50Coverage >= 0.35 && calibration.observedP50Coverage <= 0.65;
+  const p80OnTarget = calibration.observedP80Coverage !== null && calibration.observedP80Coverage >= 0.68 && calibration.observedP80Coverage <= 0.9;
   if (analysis.ambiguity === "high" || analysis.signals.external && analysis.signals.deploy) {
     return {
       level: "low",
@@ -736,10 +781,31 @@ var confidenceFor = (analysis, minutes, calibrationSamples) => {
       reason: analysis.ambiguity === "high" ? "Requirements remain ambiguous" : "External release path"
     };
   }
+  if (!enoughHistory) {
+    return {
+      level: "low",
+      spread,
+      reason: "Not enough comparable completed runs"
+    };
+  }
+  if (!p50OnTarget || !p80OnTarget) {
+    return {
+      level: "low",
+      spread,
+      reason: "Observed coverage is still recalibrating"
+    };
+  }
+  if (analysis.ambiguity === "low" && !analysis.signals.external && spread <= 2.2) {
+    return {
+      level: "high",
+      spread,
+      reason: "Clear scope with calibrated history"
+    };
+  }
   return {
     level: "medium",
     spread,
-    reason: calibrationSamples > 0 ? "Some personal history available" : "Heuristic baseline"
+    reason: "Empirical coverage is on target"
   };
 };
 var formatDuration = (minutes) => {
@@ -827,7 +893,7 @@ var estimateTask = (input) => {
     },
     stages,
     analysis,
-    confidence: confidenceFor(analysis, minutes, Math.floor(calibration.effectiveSampleCount)),
+    confidence: confidenceFor(analysis, minutes, calibration),
     drivers,
     assumptions,
     calibration,
@@ -877,7 +943,7 @@ function normalizeModel(value, provider) {
   if (typeof value !== "string" || !value.trim()) return provider === "codex" ? "codex-default" : "claude-default";
   return value.trim().replace(/[^a-zA-Z0-9._:/-]/gu, "-").slice(0, 80) || `${provider}-default`;
 }
-function toStoredEstimate(estimate) {
+function toStoredEstimate(estimate, baseline) {
   return {
     minutes: {
       p25: estimate.minutes.p25,
@@ -886,6 +952,13 @@ function toStoredEstimate(estimate) {
       p95: estimate.minutes.p95,
       expected: estimate.minutes.expected
     },
+    ...baseline ? {
+      baseline: {
+        p50: baseline.minutes.p50,
+        p80: baseline.minutes.p80,
+        p95: baseline.minutes.p95
+      }
+    } : {},
     formatted: {
       p50: estimate.formatted.p50,
       p80: estimate.formatted.p80
@@ -1316,12 +1389,61 @@ function isStoredFeatures(value) {
   return isOneOf(value.provider, PROVIDERS) && isBoundedString(value.model, MAX_MODEL_LENGTH) && isOneOf(value.effort, EFFORTS) && isOneOf(value.speed, SPEEDS) && isStoredPrompt(value.prompt) && isStoredRepository(value.repo);
 }
 function isStoredEstimate(value) {
-  if (!isObject(value) || !hasOnlyKeys(value, ["minutes", "formatted", "confidence"])) return false;
+  if (!isObject(value) || !hasOnlyKeys(value, ["minutes", "baseline", "formatted", "confidence"])) return false;
   if (!isObject(value.minutes) || !hasOnlyKeys(value.minutes, ["p25", "p50", "p80", "p95", "expected"])) return false;
+  if (Object.hasOwn(value, "baseline")) {
+    if (!isObject(value.baseline) || !hasOnlyKeys(value.baseline, ["p50", "p80", "p95"])) return false;
+    const baseline = value.baseline;
+    if (![baseline.p50, baseline.p80, baseline.p95].every(isNonnegativeFiniteNumber) || baseline.p50 > baseline.p80 || baseline.p80 > baseline.p95) return false;
+  }
   if (!isObject(value.formatted) || !hasOnlyKeys(value.formatted, ["p50", "p80"])) return false;
   if (!isObject(value.confidence) || !hasOnlyKeys(value.confidence, ["level", "spread", "reason"])) return false;
   const { p25, p50, p80, p95, expected } = value.minutes;
   return [p25, p50, p80, p95, expected].every(isNonnegativeFiniteNumber) && p25 <= p50 && p50 <= p80 && p80 <= p95 && isBoundedString(value.formatted.p50, MAX_FORMATTED_DURATION_LENGTH) && isBoundedString(value.formatted.p80, MAX_FORMATTED_DURATION_LENGTH) && isOneOf(value.confidence.level, CONFIDENCE_LEVELS) && isNonnegativeFiniteNumber(value.confidence.spread) && isBoundedString(value.confidence.reason, MAX_CONFIDENCE_REASON_LENGTH);
+}
+function baselineMinutes(entry) {
+  if (entry.estimate.baseline) return entry.estimate.baseline;
+  const prompt = entry.features.prompt;
+  const baseline = estimateTask({
+    prompt: "",
+    provider: entry.features.provider,
+    model: entry.features.model,
+    effort: entry.features.effort,
+    speed: entry.features.speed,
+    taskClass: prompt.taskClass,
+    options: {
+      scope: prompt.scope,
+      ambiguity: prompt.ambiguity,
+      external: prompt.external,
+      tests: prompt.tests,
+      browser: prompt.browser,
+      deploy: prompt.deploy,
+      destructive: prompt.destructive
+    },
+    repo: entry.features.repo
+  });
+  return {
+    p50: baseline.minutes.p50,
+    p80: baseline.minutes.p80,
+    p95: baseline.minutes.p95
+  };
+}
+function toCalibrationSample(entry) {
+  const baseline = baselineMinutes(entry);
+  return {
+    estimatedMinutes: entry.estimate.minutes.p50,
+    estimatedP80Minutes: entry.estimate.minutes.p80,
+    estimatedP95Minutes: entry.estimate.minutes.p95,
+    baselineP50Minutes: baseline.p50,
+    baselineP80Minutes: baseline.p80,
+    baselineP95Minutes: baseline.p95,
+    actualMinutes: entry.elapsedMs / 6e4,
+    taskClass: entry.features.prompt.taskClass,
+    provider: entry.features.provider,
+    model: entry.features.model,
+    effort: entry.features.effort,
+    speed: entry.features.speed
+  };
 }
 function isRunRecord(value) {
   if (!isObject(value) || value.schemaVersion !== SCHEMA_VERSION || !isPrivateKey(value.runId)) return false;
@@ -1668,29 +1790,26 @@ var CalibrationStore = class {
     const completed = history.filter(
       (entry) => entry.elapsedMs !== void 0 && entry.outcome !== void 0
     );
-    const successful = completed.filter((entry) => entry.outcome === "success");
-    const calibrationSamples = successful.map((entry) => ({
-      estimatedMinutes: entry.estimate.minutes.p50,
-      estimatedP80Minutes: entry.estimate.minutes.p80,
-      estimatedP95Minutes: entry.estimate.minutes.p95,
-      actualMinutes: entry.elapsedMs / 6e4,
-      taskClass: entry.features.prompt.taskClass,
-      provider: entry.features.provider,
-      model: entry.features.model,
-      effort: entry.features.effort,
-      speed: entry.features.speed
-    }));
+    const successful = completed.filter(
+      (entry) => entry.outcome === "success"
+    );
+    const calibrationSamples = successful.map(toCalibrationSample);
     const learningEvidence = calibrate(calibrationSamples, {});
     const eligibleCalibrationRuns = successful.length - learningEvidence.excludedSampleCount;
     const actualMinutes = successful.map((entry) => positiveFinite(entry.elapsedMs / 6e4));
     const absoluteErrors = successful.map((entry) => Math.abs(entry.elapsedMs / 6e4 - entry.estimate.minutes.p50));
+    const signedErrors = successful.map((entry) => entry.estimate.minutes.p50 - entry.elapsedMs / 6e4);
     const coverage = (quantile) => {
       if (successful.length === 0) return null;
       const inside = successful.filter((entry) => entry.elapsedMs / 6e4 <= entry.estimate.minutes[quantile]).length;
       return inside / successful.length;
     };
+    const p50ObservedCoverage = round2(coverage("p50"), 3);
+    const p80ObservedCoverage = round2(coverage("p80"), 3);
+    const reliability = eligibleCalibrationRuns < 8 ? "unproven" : p50ObservedCoverage !== null && p50ObservedCoverage >= 0.35 && p50ObservedCoverage <= 0.65 && p80ObservedCoverage !== null && p80ObservedCoverage >= 0.68 && p80ObservedCoverage <= 0.9 ? "calibrated" : "recalibrating";
     return {
       state: eligibleCalibrationRuns >= 20 ? "personalized" : eligibleCalibrationRuns >= 3 ? "learning" : "cold-start",
+      reliability,
       startedRuns: history.length,
       completedRuns: completed.length,
       successfulRuns: successful.length,
@@ -1700,25 +1819,16 @@ var CalibrationStore = class {
       censoredRuns: completed.filter((entry) => entry.outcome === "censored").length,
       medianActualMinutes: round2(median(actualMinutes)),
       medianAbsoluteErrorMinutes: round2(median(absoluteErrors)),
-      p50ObservedCoverage: round2(coverage("p50"), 3),
-      p80ObservedCoverage: round2(coverage("p80"), 3)
+      medianSignedErrorMinutes: round2(median(signedErrors)),
+      p50ObservedCoverage,
+      p80ObservedCoverage
     };
   }
   async calibrationSamples(limit = 200) {
     const history = await this.history(Number.MAX_SAFE_INTEGER);
     return history.filter(
       (entry) => entry.elapsedMs !== void 0 && entry.outcome === "success"
-    ).slice(0, Math.max(0, limit)).map((entry) => ({
-      estimatedMinutes: entry.estimate.minutes.p50,
-      estimatedP80Minutes: entry.estimate.minutes.p80,
-      estimatedP95Minutes: entry.estimate.minutes.p95,
-      actualMinutes: entry.elapsedMs / 6e4,
-      taskClass: entry.features.prompt.taskClass,
-      provider: entry.features.provider,
-      model: entry.features.model,
-      effort: entry.features.effort,
-      speed: entry.features.speed
-    }));
+    ).slice(0, Math.max(0, limit)).map(toCalibrationSample);
   }
   async privacyFingerprint() {
     const records = await this.records();
@@ -1841,7 +1951,7 @@ async function handleSubmit(input, options) {
   const store = new CalibrationStore({ dataDir: options.dataDir });
   const repo = await safeProfile(cwd, store);
   const calibrationSamples = await store.calibrationSamples().catch(() => []);
-  const estimate = estimateTask({
+  const estimateInput = {
     prompt,
     provider,
     model,
@@ -1857,9 +1967,10 @@ async function handleSubmit(input, options) {
       browser: promptFeatures.browser,
       deploy: promptFeatures.deploy,
       destructive: promptFeatures.destructive
-    },
-    calibrationSamples
-  });
+    }
+  };
+  const baseline = estimateTask(estimateInput);
+  const estimate = estimateTask({ ...estimateInput, calibrationSamples });
   const now = (options.now ?? (() => /* @__PURE__ */ new Date()))();
   const sessionId = asString(input.session_id) ?? asString(input.sessionId) ?? "anonymous-session";
   const turnId = asString(input.turn_id) ?? asString(input.turnId);
@@ -1872,7 +1983,7 @@ async function handleSubmit(input, options) {
       repoIdentity: cwd,
       startedAt: now,
       features: toStoredFeatures({ provider, model, effort, speed, prompt: promptFeatures, repo }),
-      estimate: toStoredEstimate(estimate),
+      estimate: toStoredEstimate(estimate, baseline),
       identityHint
     });
   } catch {
@@ -1953,7 +2064,9 @@ async function runHookProcess(options = {}) {
 }
 function isDirectExecution() {
   const entry = process.argv[1];
-  return Boolean(entry && import.meta.url === pathToFileURL(entry).href);
+  return Boolean(
+    entry && import.meta.url === pathToFileURL(entry).href && /\/hook\.(?:mjs|js|ts)$/u.test(new URL(import.meta.url).pathname)
+  );
 }
 if (isDirectExecution()) {
   runHookProcess().catch(() => {

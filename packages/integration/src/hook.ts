@@ -155,7 +155,7 @@ async function handleSubmit(input: HookInput, options: HookInvocationOptions): P
   const store = new CalibrationStore({ dataDir: options.dataDir });
   const repo = await safeProfile(cwd, store);
   const calibrationSamples = await store.calibrationSamples().catch(() => []);
-  const estimate = estimateTask({
+  const estimateInput = {
     prompt,
     provider,
     model,
@@ -172,8 +172,9 @@ async function handleSubmit(input: HookInput, options: HookInvocationOptions): P
       deploy: promptFeatures.deploy,
       destructive: promptFeatures.destructive,
     },
-    calibrationSamples,
-  });
+  };
+  const baseline = estimateTask(estimateInput);
+  const estimate = estimateTask({ ...estimateInput, calibrationSamples });
 
   const now = (options.now ?? (() => new Date()))();
   const sessionId = asString(input.session_id) ?? asString(input.sessionId) ?? 'anonymous-session';
@@ -190,7 +191,7 @@ async function handleSubmit(input: HookInput, options: HookInvocationOptions): P
       repoIdentity: cwd,
       startedAt: now,
       features: toStoredFeatures({ provider, model, effort, speed, prompt: promptFeatures, repo }),
-      estimate: toStoredEstimate(estimate),
+      estimate: toStoredEstimate(estimate, baseline),
       identityHint,
     });
   } catch {
@@ -283,7 +284,11 @@ export async function runHookProcess(options: HookInvocationOptions = {}): Promi
 
 function isDirectExecution(): boolean {
   const entry = process.argv[1];
-  return Boolean(entry && import.meta.url === pathToFileURL(entry).href);
+  return Boolean(
+    entry &&
+    import.meta.url === pathToFileURL(entry).href &&
+    /\/hook\.(?:mjs|js|ts)$/u.test(new URL(import.meta.url).pathname),
+  );
 }
 
 if (isDirectExecution()) {

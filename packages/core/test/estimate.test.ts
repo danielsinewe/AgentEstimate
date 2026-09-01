@@ -161,6 +161,30 @@ describe('prompt analysis and formatting', () => {
     expect(JSON.stringify(analysis)).not.toContain(prompt);
   });
 
+  it('treats a pasted completion report as evidence instead of future work', () => {
+    const analysis = analyzePrompt(`
+<in-app-browser-context source="ambient-ui-state">
+Current URL: https://github.com/example/repo
+</in-app-browser-context>
+
+## My request:
+I think this estimation is really bad, right? Worked for 13m 50s
+
+Deployed to production: the Deals board is responsive.
+
+- Verified in the browser.
+- Committed and pushed to main.
+
+Original ETA: ⏱ About 36 min · allow up to 48 min
+`);
+
+    expect(analysis).toMatchObject({
+      taskClass: 'question',
+      scope: 'micro',
+      signals: { browser: false, deploy: false, tests: false },
+    });
+  });
+
   it('formats useful human durations', () => {
     expect(formatDuration(0.4)).toBe('<1 min');
     expect(formatDuration(45)).toBe('45 min');

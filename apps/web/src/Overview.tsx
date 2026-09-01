@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReturnWindowMark } from './Brand';
+import { coverageAssessment } from './coverage';
 import {
   getAuthenticatedUser,
   listPrivateRuns,
@@ -150,6 +151,7 @@ export default function OverviewPage() {
   const measured = completed.filter((run) => run.p80 !== null);
   const withinRange = measured.filter((run) => (run.actual ?? Number.POSITIVE_INFINITY) <= (run.p80 ?? 0));
   const coverage = measured.length ? Math.round((withinRange.length / measured.length) * 100) : null;
+  const coverageLabel = coverage === null ? null : coverageAssessment(coverage);
   const medianError = median(completed.map((run) => Math.abs((run.actual ?? 0) - run.p50)));
 
   async function importPluginHistory(file: File | undefined) {
@@ -212,9 +214,9 @@ export default function OverviewPage() {
 
         <section className="overview-metrics" aria-label="Run summary">
           <article className="overview-primary-metric">
-            <span>Within planning range</span>
+            <span>Planning range{coverageLabel ? ` · ${coverageLabel}` : ''}</span>
             <strong>{coverage === null ? '—' : `${coverage}%`}</strong>
-            <p>{measured.length ? `${withinRange.length} of ${measured.length} completed runs` : 'Import completed runs to measure accuracy.'}</p>
+            <p>{measured.length ? `${withinRange.length} of ${measured.length} · target about 80%` : 'Import completed runs to measure accuracy.'}</p>
             <div className="overview-meter" aria-hidden="true"><i style={{ width: `${coverage ?? 0}%` }} /></div>
           </article>
           <article>

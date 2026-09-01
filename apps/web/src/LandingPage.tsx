@@ -2,6 +2,7 @@ import { formatDuration } from '@agent-eta/core';
 import { ArrowDown, ArrowUpRight, LockKeyhole, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ReturnWindowMark } from './Brand';
+import { coverageAssessment } from './coverage';
 import {
   bootstrapOAuthCallback,
   getPublicDashboardSnapshot,
@@ -56,6 +57,7 @@ export default function LandingPage() {
     [snapshot],
   );
   const coverage = snapshot ? Math.round(snapshot.p80_coverage * 100) : 0;
+  const coverageLabel = coverageAssessment(coverage);
 
   return (
     <div className="public-dashboard-shell">
@@ -115,11 +117,11 @@ export default function LandingPage() {
                 <article className="coverage-card">
                   <span className="card-index">01 / RANGE</span>
                   <strong>{coverage}<sup>%</sup></strong>
-                  <p>landed inside the promised planning window</p>
+                  <p>planning range coverage · {coverageLabel}</p>
                   <div className="coverage-track" aria-label={`${snapshot.within_p80_runs} of ${snapshot.measured_runs} measured successful runs within P80`}>
                     <span style={{ width: `${coverage}%` }} />
                   </div>
-                  <small>{snapshot.within_p80_runs} of {snapshot.measured_runs} measured finishes</small>
+                  <small>{snapshot.within_p80_runs} of {snapshot.measured_runs} · target about 80%</small>
                 </article>
 
                 <div className="metric-grid">

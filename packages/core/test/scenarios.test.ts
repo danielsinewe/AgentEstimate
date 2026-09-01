@@ -67,6 +67,11 @@ describe('cold-start scenario contracts', () => {
     expect(migration.analysis.taskClass).toBe('migration');
     expect(migration.minutes.p50).toBeGreaterThan(feature.minutes.p50 * 1.8);
   });
+
+  it('does not mistake a terse product-quality request for a micro edit', () => {
+    const result = estimate('Make it more trustworthy based on data.');
+    expect(result.analysis).toMatchObject({ taskClass: 'feature', scope: 'large', ambiguity: 'high' });
+  });
 });
 
 describe('personal calibration safeguards', () => {
@@ -114,5 +119,24 @@ describe('personal calibration safeguards', () => {
     const result = calibrate(samples, context);
     expect(result.quantileMultipliers.p80).toBeGreaterThan(result.quantileMultipliers.p50);
     expect(result.quantileMultipliers.p95).toBeGreaterThan(result.quantileMultipliers.p50);
+  });
+
+  it('learns absolute bias from uncalibrated baselines instead of compounding old forecasts', () => {
+    const actuals = [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22];
+    const samples: CalibrationSample[] = actuals.map((actualMinutes) => ({
+      estimatedMinutes: 36,
+      estimatedP80Minutes: 48,
+      estimatedP95Minutes: 66,
+      baselineP50Minutes: 68,
+      baselineP80Minutes: 86,
+      baselineP95Minutes: 112,
+      actualMinutes,
+      ...context,
+    }));
+    const result = calibrate(samples, context);
+    expect(result.multiplier).toBeLessThan(0.3);
+    expect(result.quantileMultipliers.p80).toBeLessThan(0.5);
+    expect(result.observedP50Coverage).toBeGreaterThan(0.8);
+    expect(result.observedP80Coverage).toBeGreaterThan(0.9);
   });
 });

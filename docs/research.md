@@ -164,17 +164,19 @@ The engine sorts the simulated totals to return P25, P50, P80, P95, and the arit
 
 ### 6. Robust personal calibration
 
-For successful runs, calibration starts from the ratio:
+For successful runs, calibration learns the absolute correction from the estimate before personalization:
 
 ```text
-actual elapsed minutes / original P50 minutes
+actual elapsed minutes / uncalibrated baseline P50 minutes
 ```
 
-It estimates a robust center in log space, limits extreme ratios, and winsorizes deviations around a weighted median. Each historical run receives one similarity weight from task class, provider, model, effort, and speed. It is counted exactly once; overlapping cohort labels cannot amplify the same two samples. The weighted result is shrunk toward the cold-start prior according to effective sample size.
+This distinction prevents a feedback bug where each new correction is learned from an already-corrected forecast and then applied again as if it were absolute. New runs store the three uncalibrated baseline quantiles alongside the forecast users saw. Older privacy-safe records reconstruct the baseline from their stored task, model, effort, speed, and repository features; this is an approximation because raw prompts are intentionally unavailable.
 
-Stop boundaries with an actual/P50 ratio below `0.08` or above `8` remain visible in history but are quarantined from learning. This protects the model from reply-only tests, interrupted sessions incorrectly reported as clean stops, and runaway timers. The final center multiplier is clamped to `0.55…1.80`. With enough comparable samples, robust residual dispersion adjusts interval width. When original P80/P95 values are available, empirical upper-quantile residuals add separately shrunk coverage corrections rather than assuming a center correction fixes the tail.
+The estimator fits a robust center in log space, limits extreme ratios, and winsorizes deviations around a weighted median. Each historical run receives one similarity weight from task class, provider, model, effort, and speed. It is counted exactly once; overlapping cohort labels cannot amplify the same run. The weighted result is shrunk toward the cold-start prior according to effective sample size.
 
-Personalization adapts the center, residual width, and—when evidence supports it—upper quantiles. Empirical P50/P80 coverage remains the test of whether the distribution is trustworthy. The status label becomes `personalized`, never `calibrated`, because sample count alone cannot certify coverage.
+Implausible legacy stop boundaries remain visible in history but are quarantined from learning. Baseline-aware records use broader learning bounds because a large, repeatable cold-start bias is valid evidence rather than an automatic outlier. The final correction remains bounded. With enough comparable samples, robust residual dispersion adjusts interval width, while P80 and P95 receive separately shrunk empirical corrections instead of assuming a midpoint correction fixes the tail.
+
+Trust is coverage-gated, not sample-count-gated. Similarity-weighted observed coverage must be near 50% for the midpoint and near 80% for the planning bound before a run can claim calibrated confidence. Coverage above the target is labeled **too wide**, not accurate, because a planning range that catches nearly everything is not informative. Until both checks are plausible, the status is `recalibrating` and the forecast confidence stays low.
 
 ## Privacy and threat boundary
 

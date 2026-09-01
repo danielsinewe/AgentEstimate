@@ -98,7 +98,7 @@ describe('privacy-safe feature derivation', () => {
       effort: 'high',
       speed: 'fast',
     });
-    const storedEstimate = toStoredEstimate(estimate);
+    const storedEstimate = toStoredEstimate(estimate, estimate);
     const serialized = JSON.stringify({ storedFeatures, storedEstimate });
 
     expect(storedFeatures.repo).toEqual({
@@ -116,5 +116,10 @@ describe('privacy-safe feature derivation', () => {
     expect(serialized).not.toContain('drivers');
     expect(serialized).not.toContain('seed');
     expect(Object.keys(storedEstimate.formatted)).toEqual(['p50', 'p80']);
+    expect(storedEstimate.baseline).toEqual({
+      p50: estimate.minutes.p50,
+      p80: estimate.minutes.p80,
+      p95: estimate.minutes.p95,
+    });
   });
 });

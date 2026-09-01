@@ -55,6 +55,7 @@ export interface StoredRunFeatures {
 
 export interface StoredEstimate {
   minutes: Pick<EstimateResult['minutes'], 'p25' | 'p50' | 'p80' | 'p95' | 'expected'>;
+  baseline?: Pick<EstimateResult['minutes'], 'p50' | 'p80' | 'p95'>;
   formatted: Pick<EstimateResult['formatted'], 'p50' | 'p80'>;
   confidence: EstimateResult['confidence'];
 }
@@ -97,6 +98,7 @@ export interface RunHistoryEntry {
 
 export interface CalibrationStatus {
   state: 'cold-start' | 'learning' | 'personalized';
+  reliability: 'unproven' | 'recalibrating' | 'calibrated';
   startedRuns: number;
   completedRuns: number;
   successfulRuns: number;
@@ -106,6 +108,7 @@ export interface CalibrationStatus {
   censoredRuns: number;
   medianActualMinutes: number | null;
   medianAbsoluteErrorMinutes: number | null;
+  medianSignedErrorMinutes: number | null;
   p50ObservedCoverage: number | null;
   p80ObservedCoverage: number | null;
 }

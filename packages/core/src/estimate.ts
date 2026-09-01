@@ -496,20 +496,15 @@ const rankedDrivers = (
 const confidenceFor = (
   analysis: PromptAnalysis,
   minutes: DurationQuantiles,
-  calibrationSamples: number,
+  calibration: EstimateResult['calibration'],
 ): EstimateResult['confidence'] => {
   const spread = Math.round((minutes.p95 / Math.max(0.1, minutes.p50)) * 100) / 100;
-  if (
-    analysis.ambiguity === 'low' &&
-    !analysis.signals.external &&
-    (!analysis.signals.deploy || calibrationSamples >= 8)
-  ) {
-    return {
-      level: 'high',
-      spread,
-      reason: calibrationSamples >= 8 ? 'Clear scope with personal history' : 'Clear, local scope',
-    };
-  }
+  const enoughHistory = calibration.effectiveSampleCount >= 8;
+  const p50OnTarget = calibration.observedP50Coverage !== null &&
+    calibration.observedP50Coverage >= 0.35 && calibration.observedP50Coverage <= 0.65;
+  const p80OnTarget = calibration.observedP80Coverage !== null &&
+    calibration.observedP80Coverage >= 0.68 && calibration.observedP80Coverage <= 0.9;
+
   if (analysis.ambiguity === 'high' || (analysis.signals.external && analysis.signals.deploy)) {
     return {
       level: 'low',
@@ -517,10 +512,35 @@ const confidenceFor = (
       reason: analysis.ambiguity === 'high' ? 'Requirements remain ambiguous' : 'External release path',
     };
   }
+  if (!enoughHistory) {
+    return {
+      level: 'low',
+      spread,
+      reason: 'Not enough comparable completed runs',
+    };
+  }
+  if (!p50OnTarget || !p80OnTarget) {
+    return {
+      level: 'low',
+      spread,
+      reason: 'Observed coverage is still recalibrating',
+    };
+  }
+  if (
+    analysis.ambiguity === 'low' &&
+    !analysis.signals.external &&
+    spread <= 2.2
+  ) {
+    return {
+      level: 'high',
+      spread,
+      reason: 'Clear scope with calibrated history',
+    };
+  }
   return {
     level: 'medium',
     spread,
-    reason: calibrationSamples > 0 ? 'Some personal history available' : 'Heuristic baseline',
+    reason: 'Empirical coverage is on target',
   };
 };
 
@@ -620,7 +640,7 @@ export const estimateTask = (input: EstimateInput): EstimateResult => {
     },
     stages,
     analysis,
-    confidence: confidenceFor(analysis, minutes, Math.floor(calibration.effectiveSampleCount)),
+    confidence: confidenceFor(analysis, minutes, calibration),
     drivers,
     assumptions,
     calibration,

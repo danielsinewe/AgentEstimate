@@ -12,7 +12,7 @@ import type {
   StoredEstimate,
   StoredRunFeatures,
 } from './types.js';
-import { calibrate, type CalibrationSample } from '@agent-eta/core';
+import { calibrate, estimateTask, type CalibrationSample } from '@agent-eta/core';
 
 const SCHEMA_VERSION = 1 as const;
 const HISTORY_FILENAME = 'runs.jsonl';
@@ -173,8 +173,15 @@ function isStoredFeatures(value: unknown): value is StoredRunFeatures {
 }
 
 function isStoredEstimate(value: unknown): value is StoredEstimate {
-  if (!isObject(value) || !hasOnlyKeys(value, ['minutes', 'formatted', 'confidence'])) return false;
+  if (!isObject(value) || !hasOnlyKeys(value, ['minutes', 'baseline', 'formatted', 'confidence'])) return false;
   if (!isObject(value.minutes) || !hasOnlyKeys(value.minutes, ['p25', 'p50', 'p80', 'p95', 'expected'])) return false;
+  if (Object.hasOwn(value, 'baseline')) {
+    if (!isObject(value.baseline) || !hasOnlyKeys(value.baseline, ['p50', 'p80', 'p95'])) return false;
+    const baseline = value.baseline;
+    if (![baseline.p50, baseline.p80, baseline.p95].every(isNonnegativeFiniteNumber) ||
+      (baseline.p50 as number) > (baseline.p80 as number) ||
+      (baseline.p80 as number) > (baseline.p95 as number)) return false;
+  }
   if (!isObject(value.formatted) || !hasOnlyKeys(value.formatted, ['p50', 'p80'])) return false;
   if (!isObject(value.confidence) || !hasOnlyKeys(value.confidence, ['level', 'spread', 'reason'])) return false;
 
@@ -188,6 +195,54 @@ function isStoredEstimate(value: unknown): value is StoredEstimate {
     isOneOf(value.confidence.level, CONFIDENCE_LEVELS) &&
     isNonnegativeFiniteNumber(value.confidence.spread) &&
     isBoundedString(value.confidence.reason, MAX_CONFIDENCE_REASON_LENGTH);
+}
+
+function baselineMinutes(entry: RunHistoryEntry): NonNullable<StoredEstimate['baseline']> {
+  if (entry.estimate.baseline) return entry.estimate.baseline;
+  const prompt = entry.features.prompt;
+  const baseline = estimateTask({
+    prompt: '',
+    provider: entry.features.provider,
+    model: entry.features.model,
+    effort: entry.features.effort,
+    speed: entry.features.speed,
+    taskClass: prompt.taskClass,
+    options: {
+      scope: prompt.scope,
+      ambiguity: prompt.ambiguity,
+      external: prompt.external,
+      tests: prompt.tests,
+      browser: prompt.browser,
+      deploy: prompt.deploy,
+      destructive: prompt.destructive,
+    },
+    repo: entry.features.repo,
+  });
+  return {
+    p50: baseline.minutes.p50,
+    p80: baseline.minutes.p80,
+    p95: baseline.minutes.p95,
+  };
+}
+
+function toCalibrationSample(
+  entry: RunHistoryEntry & { elapsedMs: number; outcome: 'success' },
+): CalibrationSample {
+  const baseline = baselineMinutes(entry);
+  return {
+    estimatedMinutes: entry.estimate.minutes.p50,
+    estimatedP80Minutes: entry.estimate.minutes.p80,
+    estimatedP95Minutes: entry.estimate.minutes.p95,
+    baselineP50Minutes: baseline.p50,
+    baselineP80Minutes: baseline.p80,
+    baselineP95Minutes: baseline.p95,
+    actualMinutes: entry.elapsedMs / 60_000,
+    taskClass: entry.features.prompt.taskClass,
+    provider: entry.features.provider,
+    model: entry.features.model,
+    effort: entry.features.effort,
+    speed: entry.features.speed,
+  };
 }
 
 function isRunRecord(value: unknown): value is RunRecord {
@@ -584,30 +639,33 @@ export class CalibrationStore {
       (entry): entry is RunHistoryEntry & { elapsedMs: number; outcome: NonNullable<RunHistoryEntry['outcome']> } =>
         entry.elapsedMs !== undefined && entry.outcome !== undefined,
     );
-    const successful = completed.filter((entry) => entry.outcome === 'success');
-    const calibrationSamples: CalibrationSample[] = successful.map((entry) => ({
-      estimatedMinutes: entry.estimate.minutes.p50,
-      estimatedP80Minutes: entry.estimate.minutes.p80,
-      estimatedP95Minutes: entry.estimate.minutes.p95,
-      actualMinutes: entry.elapsedMs / 60_000,
-      taskClass: entry.features.prompt.taskClass,
-      provider: entry.features.provider,
-      model: entry.features.model,
-      effort: entry.features.effort,
-      speed: entry.features.speed,
-    }));
+    const successful = completed.filter(
+      (entry): entry is RunHistoryEntry & { elapsedMs: number; outcome: 'success' } => entry.outcome === 'success',
+    );
+    const calibrationSamples = successful.map(toCalibrationSample);
     const learningEvidence = calibrate(calibrationSamples, {});
     const eligibleCalibrationRuns = successful.length - learningEvidence.excludedSampleCount;
     const actualMinutes = successful.map((entry) => positiveFinite(entry.elapsedMs / 60_000));
     const absoluteErrors = successful.map((entry) => Math.abs(entry.elapsedMs / 60_000 - entry.estimate.minutes.p50));
+    const signedErrors = successful.map((entry) => entry.estimate.minutes.p50 - entry.elapsedMs / 60_000);
     const coverage = (quantile: 'p50' | 'p80'): number | null => {
       if (successful.length === 0) return null;
       const inside = successful.filter((entry) => entry.elapsedMs / 60_000 <= entry.estimate.minutes[quantile]).length;
       return inside / successful.length;
     };
 
+    const p50ObservedCoverage = round(coverage('p50'), 3);
+    const p80ObservedCoverage = round(coverage('p80'), 3);
+    const reliability = eligibleCalibrationRuns < 8
+      ? 'unproven'
+      : p50ObservedCoverage !== null && p50ObservedCoverage >= 0.35 && p50ObservedCoverage <= 0.65 &&
+          p80ObservedCoverage !== null && p80ObservedCoverage >= 0.68 && p80ObservedCoverage <= 0.9
+        ? 'calibrated'
+        : 'recalibrating';
+
     return {
       state: eligibleCalibrationRuns >= 20 ? 'personalized' : eligibleCalibrationRuns >= 3 ? 'learning' : 'cold-start',
+      reliability,
       startedRuns: history.length,
       completedRuns: completed.length,
       successfulRuns: successful.length,
@@ -617,8 +675,9 @@ export class CalibrationStore {
       censoredRuns: completed.filter((entry) => entry.outcome === 'censored').length,
       medianActualMinutes: round(median(actualMinutes)),
       medianAbsoluteErrorMinutes: round(median(absoluteErrors)),
-      p50ObservedCoverage: round(coverage('p50'), 3),
-      p80ObservedCoverage: round(coverage('p80'), 3),
+      medianSignedErrorMinutes: round(median(signedErrors)),
+      p50ObservedCoverage,
+      p80ObservedCoverage,
     };
   }
 
@@ -630,17 +689,7 @@ export class CalibrationStore {
           entry.elapsedMs !== undefined && entry.outcome === 'success',
       )
       .slice(0, Math.max(0, limit))
-      .map((entry) => ({
-        estimatedMinutes: entry.estimate.minutes.p50,
-        estimatedP80Minutes: entry.estimate.minutes.p80,
-        estimatedP95Minutes: entry.estimate.minutes.p95,
-        actualMinutes: entry.elapsedMs / 60_000,
-        taskClass: entry.features.prompt.taskClass,
-        provider: entry.features.provider,
-        model: entry.features.model,
-        effort: entry.features.effort,
-        speed: entry.features.speed,
-      }));
+      .map(toCalibrationSample);
   }
 
   async privacyFingerprint(): Promise<string> {

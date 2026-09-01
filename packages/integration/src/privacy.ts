@@ -56,7 +56,7 @@ export function normalizeModel(value: unknown, provider: AgentProvider): string 
   return value.trim().replace(/[^a-zA-Z0-9._:/-]/gu, '-').slice(0, 80) || `${provider}-default`;
 }
 
-export function toStoredEstimate(estimate: EstimateResult): StoredEstimate {
+export function toStoredEstimate(estimate: EstimateResult, baseline?: EstimateResult): StoredEstimate {
   return {
     minutes: {
       p25: estimate.minutes.p25,
@@ -65,6 +65,13 @@ export function toStoredEstimate(estimate: EstimateResult): StoredEstimate {
       p95: estimate.minutes.p95,
       expected: estimate.minutes.expected,
     },
+    ...(baseline ? {
+      baseline: {
+        p50: baseline.minutes.p50,
+        p80: baseline.minutes.p80,
+        p95: baseline.minutes.p95,
+      },
+    } : {}),
     formatted: {
       p50: estimate.formatted.p50,
       p80: estimate.formatted.p80,

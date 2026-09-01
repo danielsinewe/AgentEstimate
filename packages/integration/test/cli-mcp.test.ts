@@ -104,6 +104,15 @@ describe('CLI', () => {
     const calibrationOutput = captureProcessOutput();
     expect(await runCli(['calibrate', '--data-dir', dataDir, '--json'])).toBe(0);
     expect(JSON.parse(calibrationOutput.stdout())).toMatchObject({ successfulRuns: 1, state: 'cold-start' });
+    vi.restoreAllMocks();
+
+    const backtestOutput = captureProcessOutput();
+    expect(await runCli(['backtest', '--data-dir', dataDir, '--json'])).toBe(0);
+    expect(JSON.parse(backtestOutput.stdout())).toMatchObject({
+      method: 'leave-one-out',
+      successfulRuns: 1,
+      targets: { midpointCoverage: 0.5, planningCoverage: 0.8 },
+    });
   });
 
   it('supports the history-import CLI alias', async () => {

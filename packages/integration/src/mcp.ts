@@ -204,7 +204,11 @@ export async function runMcpServer(options: McpServerOptions = {}): Promise<void
 
 function isDirectExecution(): boolean {
   const entry = process.argv[1];
-  return Boolean(entry && import.meta.url === pathToFileURL(entry).href);
+  return Boolean(
+    entry &&
+    import.meta.url === pathToFileURL(entry).href &&
+    /\/mcp\.(?:mjs|js|ts)$/u.test(new URL(import.meta.url).pathname),
+  );
 }
 
 if (isDirectExecution()) {
