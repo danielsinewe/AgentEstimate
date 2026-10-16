@@ -1,6 +1,6 @@
 import { formatDuration } from '@agent-eta/core';
 import { ArrowDown, ArrowUpRight, LockKeyhole, RefreshCw } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ReturnWindowMark } from './Brand';
 import { coverageAssessment } from './coverage';
 import {
@@ -29,30 +29,46 @@ function dateLabel(timestamp: string): string {
 export default function LandingPage() {
   const [snapshot, setSnapshot] = useState<PublicDashboardSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signInFailed, setSignInFailed] = useState(false);
+  const retrySnapshot = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     const callback = bootstrapOAuthCallback();
     if (callback) {
       void callback.then((result) => {
         if (result?.ok) window.location.replace('/overview');
-        else if (result) setError(result.message);
+        else if (result) setSignInFailed(true);
       });
     }
 
     let active = true;
-    const refreshSnapshot = async (showLoading = false) => {
-      if (showLoading) setLoading(true);
-      const result = await getPublicDashboardSnapshot();
-      if (!active) return;
-      if (result.ok) {
-        setSnapshot(result.data);
-        setError(null);
-      } else setError(result.message);
-      setLoading(false);
+    let inFlight = false;
+    const refreshSnapshot = async () => {
+      if (!active || inFlight) return;
+      inFlight = true;
+      setRefreshing(true);
+      try {
+        const result = await getPublicDashboardSnapshot();
+        if (!active) return;
+        if (result.ok) {
+          setSnapshot(result.data);
+          setError(null);
+        } else setError(result.message);
+      } catch {
+        if (active) setError('The public snapshot could not be refreshed.');
+      } finally {
+        inFlight = false;
+        if (active) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
     };
 
-    void refreshSnapshot(true);
+    retrySnapshot.current = refreshSnapshot;
+    void refreshSnapshot();
     const unsubscribe = subscribeToPublicDashboard(() => void refreshSnapshot());
     const interval = window.setInterval(() => void refreshSnapshot(), 30_000);
     const handleVisibility = () => {
@@ -61,6 +77,7 @@ export default function LandingPage() {
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       active = false;
+      retrySnapshot.current = null;
       unsubscribe?.();
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
@@ -120,12 +137,33 @@ export default function LandingPage() {
             {snapshot && <p>Updated {dateLabel(snapshot.generated_at)}</p>}
           </div>
 
+          {signInFailed && (
+            <div className="public-refresh-error" role="alert">
+              <p>Sign-in couldn’t be completed. Open My runs to try again.</p>
+              <a href="/overview">My runs</a>
+            </div>
+          )}
+
+          {error && (
+            <div className="public-refresh-error" role="alert">
+              <p>{snapshot
+                ? 'Couldn’t refresh public data. The last snapshot is still shown below.'
+                : 'Public data is temporarily unavailable.'}</p>
+              <button
+                type="button"
+                disabled={refreshing}
+                aria-busy={refreshing}
+                onClick={() => void retrySnapshot.current?.()}
+              >
+                {refreshing ? 'Retrying…' : 'Retry public data'}
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="public-state" role="status"><RefreshCw size={18} /> Loading public data…</div>
-          ) : error && !snapshot ? (
-            <div className="public-state public-state-error" role="alert">Public data is temporarily unavailable.</div>
           ) : !snapshot ? (
-            <div className="public-state" role="status">The first public snapshot is being prepared.</div>
+            !error && <div className="public-state" role="status">The first public snapshot is being prepared.</div>
           ) : (
             <>
               <div className="public-scoreboard">

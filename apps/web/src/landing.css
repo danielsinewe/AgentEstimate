@@ -202,7 +202,34 @@
 }
 
 .public-state svg { animation: public-spin 1s linear infinite; }
-.public-state-error { color: #ff9a82; }
+.public-refresh-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid #ff9a82;
+  border-radius: 8px;
+  color: #ffb8a7;
+  font-size: 14px;
+}
+.public-refresh-error p { flex: 1 1 220px; margin: 0; }
+.public-refresh-error button,
+.public-refresh-error a {
+  padding: 10px 14px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.public-refresh-error button:focus-visible,
+.public-refresh-error a:focus-visible { outline: 2px solid #fffdf5; outline-offset: 4px; }
+.public-refresh-error button:disabled { cursor: wait; opacity: 0.65; }
 
 .public-scoreboard {
   display: grid;
