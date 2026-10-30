@@ -131,10 +131,15 @@ export default function LandingPage() {
         <section className="public-dashboard" id="dashboard" aria-labelledby="dashboard-title">
           <div className="public-section-heading">
             <div>
-              <p className="public-eyebrow">Live snapshot</p>
+              <p className="public-eyebrow">Published run snapshot</p>
               <h2 id="dashboard-title">What actually happened.</h2>
             </div>
-            {snapshot && <p>Updated {dateLabel(snapshot.generated_at)}</p>}
+            {snapshot && (
+              <div>
+                <p>Run period: {dateLabel(snapshot.period_start)} – {dateLabel(snapshot.period_end)}</p>
+                <p>Snapshot refreshed: {dateLabel(snapshot.generated_at)}</p>
+              </div>
+            )}
           </div>
 
           {signInFailed && (
