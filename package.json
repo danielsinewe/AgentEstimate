@@ -20,7 +20,7 @@
     "build:web": "npm run build --workspace=@agent-eta/core && npm run build --workspace=@agent-eta/web",
     "check": "npm run build --workspace=@agent-eta/core && npm run typecheck && npm run lint && npm run test && npm run build",
     "typecheck": "tsc -b",
-    "lint": "oxlint . --ignore-pattern 'plugins/agent-eta/dist/**' --deny-warnings",
+    "lint": "oxlint . --ignore-pattern '**/node_modules/**' --ignore-pattern '**/dist/**' --ignore-pattern '**/dist-types/**' --ignore-pattern '**/.vercel/**' --ignore-pattern '**/coverage/**' --deny-warnings",
     "test": "vitest run",
     "test:watch": "vitest",
     "plugin:validate": "node scripts/validate-plugin.mjs",
