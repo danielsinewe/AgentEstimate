@@ -18,7 +18,7 @@
     "dev": "npm run dev --workspace=@agent-eta/web",
     "build": "npm run build --workspace=@agent-eta/core && npm run build --workspace=@agent-eta/integration && npm run build --workspace=@agent-eta/web",
     "build:web": "npm run build --workspace=@agent-eta/core && npm run build --workspace=@agent-eta/web",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "check": "npm run build --workspace=@agent-eta/core && npm run typecheck && npm run lint && npm run test && npm run build",
     "typecheck": "tsc -b",
     "lint": "oxlint . --ignore-pattern 'plugins/agent-eta/dist/**' --deny-warnings",
     "test": "vitest run",
