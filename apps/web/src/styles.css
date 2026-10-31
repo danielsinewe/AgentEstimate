@@ -1987,6 +1987,18 @@ footer > div a {
   background: transparent;
 }
 
+.overview-clear-confirmation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.overview-clear-confirmation p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .overview-new,
 .overview-empty button {
   color: var(--ink);

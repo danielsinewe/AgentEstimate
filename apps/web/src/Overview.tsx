@@ -9,6 +9,7 @@ import {
   Gauge,
   LockKeyhole,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReturnWindowMark } from './Brand';
@@ -20,6 +21,7 @@ import {
   type PrivateRunRow,
 } from './lib/supabase';
 import {
+  clearLocalHistory,
   loadLocalHistory,
   mergeLocalHistory,
   saveLocalHistory,
@@ -108,6 +110,7 @@ export default function OverviewPage() {
   const [loadingCloud, setLoadingCloud] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
 
   const refreshCloud = useCallback(async () => {
@@ -168,9 +171,21 @@ export default function OverviewPage() {
     const merged = mergeLocalHistory(localRuns, parsed.runs);
     setLocalRuns(merged);
     saveLocalHistory(merged);
+    setConfirmClear(false);
     const ignored = parsed.incompleteRuns + parsed.ignoredLines;
     setNotice(`Imported ${parsed.runs.length} completed run${parsed.runs.length === 1 ? '' : 's'}${ignored ? ` · skipped ${ignored} unfinished or invalid` : ''}.`);
     if (importInput.current) importInput.current.value = '';
+  }
+
+  function handleClearLocalHistory() {
+    try {
+      clearLocalHistory();
+      setLocalRuns([]);
+      setConfirmClear(false);
+      setNotice('Cleared local history from this browser.');
+    } catch {
+      setNotice('Could not clear local history. Check browser storage settings and try again.');
+    }
   }
 
   return (
@@ -207,6 +222,19 @@ export default function OverviewPage() {
               <ArrowDownToLine size={16} /> Import plugin history
             </button>
             <a className="overview-new" href="/">Public dashboard <ArrowRight size={16} /></a>
+            {localRuns.length > 0 && (confirmClear ? (
+              <div className="overview-clear-confirmation" role="group" aria-label="Clear local history confirmation">
+                <p>Clear {localRuns.length} local run{localRuns.length === 1 ? '' : 's'} from this browser? Cloud history is managed in Account.</p>
+                <button className="overview-import" type="button" onClick={handleClearLocalHistory}>
+                  <Trash2 size={16} /> Confirm clear local history
+                </button>
+                <button className="overview-import" type="button" onClick={() => setConfirmClear(false)}>Cancel</button>
+              </div>
+            ) : (
+              <button className="overview-import" type="button" onClick={() => setConfirmClear(true)}>
+                <Trash2 size={16} /> Clear local history
+              </button>
+            ))}
           </div>
         </section>
 
