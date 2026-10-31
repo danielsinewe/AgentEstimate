@@ -46,3 +46,7 @@ export function saveLocalHistory(
 ): void {
   storage.setItem(LOCAL_HISTORY_STORAGE_KEY, JSON.stringify(runs));
 }
+
+export function clearLocalHistory(storage: Pick<Storage, 'removeItem'> = localStorage): void {
+  storage.removeItem(LOCAL_HISTORY_STORAGE_KEY);
+}
