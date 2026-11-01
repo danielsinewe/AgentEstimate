@@ -102,6 +102,7 @@ export default function LandingPage() {
         </a>
         <nav aria-label="Primary navigation">
           <a href="#dashboard">Dashboard</a>
+          <a className="public-demo-link" href="#demo">CLI demo</a>
           <a href="/overview"><LockKeyhole size={13} aria-hidden="true" /> My runs</a>
           <a href="https://github.com/danielsinewe/AgentEstimate" target="_blank" rel="noreferrer">
             <ArrowUpRight size={14} aria-hidden="true" /> Source
@@ -126,6 +127,28 @@ export default function LandingPage() {
           <a className="public-scroll" href="#dashboard">
             See the numbers <span><ArrowDown size={14} /></span>
           </a>
+        </section>
+
+        <section className="public-demo" id="demo" aria-labelledby="demo-title">
+          <p className="public-eyebrow">21-second CLI walkthrough</p>
+          <h2 id="demo-title">See a forecast take shape.</h2>
+          <p>A real terminal recording of the bundled CLI, using a fictional documentation task and an empty, isolated history.</p>
+          <video controls playsInline preload="metadata" poster="/media/cli-demo.png" aria-label="Agent ETA CLI forecast walkthrough" aria-describedby="demo-note">
+            <source src="/media/cli-demo.mp4" type="video/mp4" />
+            <track kind="captions" src="/media/cli-demo.vtt" srcLang="en" label="English" default />
+            <a href="/media/cli-demo.mp4">Watch the CLI recording</a>
+          </video>
+          <p id="demo-note">The command returns a planning forecast; it does not execute the task. Calibration is unproven with zero eligible completed runs. This recording demonstrates no measured completion or accuracy result, provider call, or cloud sync.</p>
+          <details>
+            <summary>Read the video transcript</summary>
+            <ol>
+              <li>Actual bundled CLI. Fictional task; empty isolated history.</li>
+              <li>The command returns a planning forecast and its drivers. It does not execute the described task.</li>
+              <li>Calibration reports unproven: zero eligible completed runs.</li>
+              <li>No measured completion or accuracy result. No provider call or cloud sync.</li>
+            </ol>
+          </details>
+          <a href="https://github.com/danielsinewe/AgentEstimate#plugin--hooks">Install or update the Codex plugin →</a>
         </section>
 
         <section className="public-dashboard" id="dashboard" aria-labelledby="dashboard-title">

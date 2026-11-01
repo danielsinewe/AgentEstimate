@@ -34,6 +34,8 @@ The public aggregate dashboard needs no account:
 
 **[Open the Agent ETA dashboard →](https://agentestimate.vercel.app)**
 
+[Watch the real, captioned CLI walkthrough](https://agentestimate.vercel.app/#demo). It uses a fictional task with empty history and demonstrates forecast output, not measured accuracy.
+
 The **Overview** compares each original ETA with actual time and reports planning-range coverage and median error. Plugin users can import the privacy-safe local `runs.jsonl`; raw prompts and repository identities are never added to browser or cloud history.
 
 To run every surface from source, use Node.js 24 or newer:
@@ -129,6 +131,14 @@ codex plugin add agent-eta@agent-eta
 ```
 
 The repository includes both the application and its Codex marketplace registration. The plugin ships its runtime, so this installation does not require a separate checkout or `npm ci`. Installation does not start a conversation or connect private cloud sync.
+
+To update an existing Git installation, refresh its marketplace:
+
+```bash
+codex plugin marketplace upgrade agent-eta
+```
+
+The native updater refreshes the installed bundle too. After updating, follow the new-session hook review and canary below; refreshed files alone do not prove that hooks are active.
 
 Automatic forecasts also require the reviewed hooks to be trusted in the host. Follow the new-session canary below; a successful install alone does not prove that hooks run. The manual MCP setup above remains available when you only want on-demand estimates.
 
