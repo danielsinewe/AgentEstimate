@@ -1,0 +1,19 @@
+{
+  "name": "agent-eta",
+  "interface": {
+    "displayName": "Agent ETA"
+  },
+  "plugins": [
+    {
+      "name": "agent-eta",
+      "source": {
+        "source": "local",
+        "path": "./plugins/agent-eta"
+      },
+      "policy": {
+        "installation": "AVAILABLE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
