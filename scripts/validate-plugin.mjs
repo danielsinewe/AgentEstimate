@@ -20,6 +20,16 @@ const claude = await json('.claude-plugin/plugin.json');
 const hooks = await json('hooks/hooks.json');
 const mcp = await json('.mcp.json');
 const packageJson = await json('package.json');
+const marketplace = JSON.parse(await readFile(resolve('.agents/plugins/marketplace.json'), 'utf8'));
+
+assert(marketplace.name === 'agent-eta', 'Codex marketplace name must be agent-eta');
+assert(marketplace.interface?.displayName === 'Agent ETA', 'Codex marketplace display name is missing');
+assert(Array.isArray(marketplace.plugins) && marketplace.plugins.length === 1, 'Codex marketplace must contain one plugin');
+const registration = marketplace.plugins[0];
+assert(registration.name === 'agent-eta', 'Codex marketplace plugin name must match the bundle');
+assert(registration.source?.source === 'local' && registration.source.path === './plugins/agent-eta', 'Codex marketplace must resolve the bundled plugin');
+assert(registration.policy?.installation === 'AVAILABLE', 'Codex marketplace installation must be available');
+assert(registration.category === 'Productivity', 'Codex marketplace category is missing');
 
 for (const manifest of [codex, claude]) {
   assert(manifest.name === 'agent-eta', 'Plugin name must be agent-eta');

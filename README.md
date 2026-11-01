@@ -121,7 +121,18 @@ MCP is excellent for asking for an estimate. Hooks are what make run capture aut
 
 ### Plugin + hooks
 
-The build copies the runtime into the self-contained plugin bundle. Load it for a local session with:
+Install the bundled Codex plugin with Node.js 24 or newer and the Codex CLI:
+
+```bash
+codex plugin marketplace add danielsinewe/AgentEstimate --ref main
+codex plugin add agent-eta@agent-eta
+```
+
+The repository includes both the application and its Codex marketplace registration. The plugin ships its runtime, so this installation does not require a separate checkout or `npm ci`. Installation does not start a conversation or connect private cloud sync.
+
+Automatic forecasts also require the reviewed hooks to be trusted in the host. Follow the new-session canary below; a successful install alone does not prove that hooks run. The manual MCP setup above remains available when you only want on-demand estimates.
+
+For Claude Code, the source build copies the runtime into the same self-contained bundle. Load it for a local session with:
 
 ```bash
 claude --plugin-dir "$PWD/plugins/agent-eta"
@@ -140,7 +151,7 @@ AGENT_ETA_STRICT=1 claude
 
 Strict mode blocks only when Agent ETA cannot calculate a forecast. Normal mode remains fail-visible and continues the prompt.
 
-The bundle also contains a Codex plugin manifest for personal or team marketplaces. This repository intentionally remains an application repository rather than a marketplace registry; the manual MCP setup above is the checkout-agnostic Codex path.
+For a local Codex development checkout, register its root with `codex plugin marketplace add /absolute/path/to/AgentEstimate`, then install `agent-eta@agent-eta`. Remove the local development registration before registering the public Git source under the same marketplace name. This does not bypass hook review.
 
 ### Library
 
