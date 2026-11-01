@@ -70,6 +70,30 @@ const AMBIENT_CONTEXT_PATTERN = /<in-app-browser-context\b[^>]*>[\s\S]*?<\/in-ap
 const MY_REQUEST_PATTERN = /^##\s+My request:\s*$/gimu;
 const RETROSPECTIVE_ETA_PATTERN = /\bOriginal ETA:\s*⏱/iu;
 
+// A document's subject is not an instruction to perform that operation.
+// Retain the document word so explicit fetch/browse requests still match below.
+const DOCUMENT_SUBJECT = '(?:releases?|deployment|production|api|auth(?:entication)?|oauth|payments?|providers?|stripe|third[- ]party|integrations?|connectors?|webhooks?|vercel|cloudflare|app store)';
+const DOCUMENT = '(?:docs?|documentation|notes?|guides?|checklists?|readme|changelog)';
+const DOCUMENT_TOPIC_PATTERN = new RegExp(
+  `\\b(?:${DOCUMENT_SUBJECT}[ -]+)+(${DOCUMENT})\\b|\\b(${DOCUMENT})\\s+(?:for|about|on)\\s+(?:(?:the|a|an|public|local)\\s+)*(?:${DOCUMENT_SUBJECT})(?:[ -]+${DOCUMENT_SUBJECT})*\\b`,
+  'giu',
+);
+
+const NEGATION = "\\b(?:do not|don't|never|without|avoid|skip|no)\\s+(?:(?:actually|ever|any|the)\\s+)*";
+const NEGATED_DEPLOY_PATTERN = new RegExp(`${NEGATION}(?:deploy(?:ing|ment)?|releas(?:e|ing)|publish(?:ing)?|ship(?:ping)?)\\b`, 'iu');
+const NEGATED_EXTERNAL_PATTERN = new RegExp(`${NEGATION}(?:(?:external|network|remote)\\s+(?:requests?|calls?|access|apis?|services?|dependencies)|(?:call(?:ing)?|fetch(?:ing)?|brows(?:e|ing)|contact(?:ing)?|access(?:ing)?))\\b`, 'iu');
+
+const DEPLOY_OPERATION_PATTERN = /\b(?:deploy(?:ment|ing)?|release|publish|ship|roll[ -]?out|go live)\b|\b(?:push|upload|promote|make)\b[^.;!?\n]{0,80}\b(?:production|live|vercel|cloudflare|app store)\b|\bvercel\s+(?:deploy\s+)?--prod\b/iu;
+
+const requestedOperations = (prompt: string, negation: RegExp): string => prompt
+  // A contrast or subsequent sentence can request real work after a prohibition.
+  .split(/[;!?\n]|\.(?=\s|$)|\b(?:but|however|then|instead)\b/iu)
+  .map((clause) => {
+    const negated = negation.exec(clause);
+    return negated ? clause.slice(0, negated.index) : clause;
+  })
+  .join(' ');
+
 /**
  * Keeps host-provided UI state and pasted completion evidence from becoming
  * prospective work. The returned text stays in memory and is never persisted.
@@ -136,9 +160,12 @@ const ambiguityFromScore = (score: number): AmbiguityLevel => {
  */
 export const analyzePrompt = (prompt: string): PromptAnalysis => {
   const normalized = actionablePrompt(prompt);
+  const operations = normalized.replace(DOCUMENT_TOPIC_PATTERN, (_match, before: string | undefined, after: string | undefined) => before ?? after ?? 'documentation');
+  const externalOperations = requestedOperations(operations, NEGATED_EXTERNAL_PATTERN);
+  const deployOperations = requestedOperations(operations, NEGATED_DEPLOY_PATTERN);
   const words = normalized.match(/[\p{L}\p{N}_'-]+/gu) ?? [];
   const wordCount = words.length;
-  const actionCount = countMatches(normalized, ACTION_PATTERN);
+  const actionCount = countMatches(operations, ACTION_PATTERN);
   const fileReferences = countMatches(normalized, FILE_PATTERN);
   const taskClass = classifyTask(normalized);
 
@@ -199,9 +226,9 @@ export const analyzePrompt = (prompt: string): PromptAnalysis => {
   const signals = {
     external:
       taskClass === 'research' ||
-      /\b(api|auth(?:entication)?|external|google sign[- ]in|oauth|payment|provider|sign[- ]in provider|stripe|third[- ]party|internet|web search|documentation|docs|integration|connector|scrape|webhook)\b/i.test(
-        normalized,
-      ),
+      /\b(api|auth(?:entication)?|external|google sign[- ]in|oauth|payment|provider|sign[- ]in provider|stripe|third[- ]party|internet|web search|integration|connector|scrape|webhook)\b/i.test(externalOperations) ||
+      /https?:\/\//iu.test(externalOperations) ||
+      /\b(?:fetch|browse|download|retrieve)\b[^.;!?\n]{0,80}\b(?:docs?|documentation)\b|\b(?:online|remote|official)\s+(?:docs?|documentation)\b|\b(?:docs?|documentation)\s+(?:online|remotely)\b/iu.test(externalOperations),
     tests:
       /\b(test(?:s|ed|ing)?|vitest|jest|pytest|specs?|coverage|qa|regression suite|typecheck|lint)\b/i.test(
         normalized,
@@ -211,9 +238,8 @@ export const analyzePrompt = (prompt: string): PromptAnalysis => {
         normalized,
       ),
     deploy:
-      /\b(deploy|deployment|production|release|publish|ship|vercel|cloudflare|app store)\b/i.test(
-        normalized,
-      ),
+      // A provider name or a word inside a documentation URL is not a release.
+      DEPLOY_OPERATION_PATTERN.test(deployOperations.replace(/https?:\/\/\S+/giu, ' ')),
     destructive:
       /\b(delete|drop|truncate|purge|remove all|overwrite|reset|uninstall)\b/i.test(normalized),
   };
