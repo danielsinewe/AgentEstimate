@@ -3039,3 +3039,11 @@ footer > div a {
     transition: none;
   }
 }
+/* Separate optional public-site choice; private routes never mount it. */
+.public-ahrefs-panel, .public-ahrefs-preferences { position: fixed; z-index: 100; right: 16px; bottom: 16px; color: #172033; background: #fff; border: 1px solid #69758a; border-radius: 10px; padding: 14px; font: 14px/1.5 system-ui, sans-serif; box-shadow: 0 4px 18px #17203322; }
+.public-ahrefs-panel { width: min(460px, calc(100vw - 32px)); }
+.public-ahrefs-panel h2 { margin: 0 0 8px; font-size: 17px; }
+.public-ahrefs-panel p { margin: 8px 0; }
+.public-ahrefs-panel div { display: flex; gap: 10px; flex-wrap: wrap; }
+.public-ahrefs-panel button { color: #172033; background: #f2efe4; border: 1px solid #69758a; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+.public-ahrefs-panel a { color: #3442a3; text-decoration: underline; }
