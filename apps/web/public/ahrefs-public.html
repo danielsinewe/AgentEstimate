@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Agent ETA public website</title></head><body><script>
+(() => {
+  if (window.parent === window) return;
+  let loaded = false;
+  window.addEventListener('message', (event) => {
+    if (loaded || event.source !== window.parent || event.origin !== 'https://agentestimate.vercel.app'
+      || event.data?.type !== 'agent-eta:public-ahrefs-grant:v1') return;
+    loaded = true;
+    const script = document.createElement('script');
+    script.src = 'https://analytics.ahrefs.com/analytics.js';
+    script.async = true;
+    script.dataset.key = 'v/M/pXBKB03JRG2FO5f56w';
+    script.dataset.pageLocation = 'https://agentestimate.vercel.app/';
+    document.head.appendChild(script);
+  });
+})();
+</script></body></html>

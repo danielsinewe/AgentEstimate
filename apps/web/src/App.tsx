@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import LandingPage from './LandingPage';
+import PublicAhrefs from './PublicAhrefsConsent';
 
 const OverviewPage = lazy(() => import('./Overview'));
 
@@ -12,7 +13,7 @@ function App() {
       </Suspense>
     );
   }
-  return <LandingPage />;
+  return <><LandingPage /><PublicAhrefs /></>;
 }
 
 export default App;
